@@ -57,7 +57,7 @@ class SceneDetector(PipelineStage):
 
     def __init__(self, threshold: float = 30.0, downscale_factor: int = 64,
                  min_scene_len: int = 15, timeout_seconds: int = 180,
-                 max_size_mb: float = 25.0):
+                 max_size_mb: float = 20.0):
         self.threshold = threshold
         self.downscale_factor = downscale_factor
         self.min_scene_len = min_scene_len  # Minimum scene length in frames
@@ -114,7 +114,8 @@ class SceneDetector(PipelineStage):
         # segments
         if not scenes:
             print(
-                "No scenes detected or detection timed out. Dividing video into equal segments...")
+                "No scenes detected or detection timed out. " +
+                "Dividing video into equal segments...")
             scenes = self._divide_video_into_segments(
                 video_path, video_duration)
 
@@ -543,7 +544,7 @@ class AnthropicSummaryGenerator(PipelineStage):
     """
 
     def __init__(self, model: str = "claude-3-7-sonnet-20250219",
-                 max_tokens: int = 1000, output_dir: str = "output"):
+                 max_tokens: int = 2000, output_dir: str = "output"):
         try:
             import anthropic
         except ImportError:
@@ -563,26 +564,22 @@ class AnthropicSummaryGenerator(PipelineStage):
         self.previous_summary_context = ""  # Track previous summary for continuity
         self.processed_scenes_count = 0  # Track number of processed scenes
 
-        # System prompt for technical content summarization with focus on
-        # visuals
+        # System prompt for technical content summarization balanced for
+        # general audience
         self.system_prompt = (
-            "You are a technical content summarizer specializing in creating concise, "
-            "accurate summaries of technical presentations and demos. "
-            "FOCUS PRIMARILY ON THE VISUAL CONTENT IN THE IMAGES when creating your summaries "
-            "as the transcripts may contain inaccuracies. "
-            "Identify key technical concepts, data points, and main arguments visible in slides "
-            "or demonstrations. Create logically connected summaries that flow naturally "
-            "from previous scenes.")
+            "You are a technical content summarizer specializing in creating accessible, "
+            "accurate summaries of technical presentations and demos for general audiences. "
+            "Use BOTH THE VISUAL CONTENT AND TRANSCRIPT to create comprehensive summaries. "
+            "For any technical terms or concepts, provide intuitive explanations that are "
+            "accessible to non-experts while maintaining technical accuracy. "
+            "Identify key technical concepts, data points, and main arguments from both the visuals "
+            "and the transcript, explaining complex ideas using analogies or simplified examples when appropriate. "
+            "Create logically connected summaries that flow naturally from previous scenes while ensuring "
+            "technical content is understandable to a broad audience.")
 
     def run(self, processed_scenes: List[Scene]) -> str:
         print("Stage 3: Generating summaries with Claude 3.7...")
         complete_summary = "# Video Summary\n\n"
-
-        # Add overall intro based on first few scenes
-        if len(processed_scenes) > 0:
-            complete_summary += self._generate_overall_introduction(
-                processed_scenes[: min(3, len(processed_scenes))])
-            complete_summary += "\n\n"
 
         for i, scene in enumerate(processed_scenes):
             scene_id = scene.scene_id
@@ -628,12 +625,7 @@ class AnthropicSummaryGenerator(PipelineStage):
 
             # Update previous context for continuity (limit to last 2 summaries
             # to control token usage)
-            if self.processed_scenes_count > 1:
-                # Keep only the most recent summary as context
-                self.previous_summary_context = scene_summary
-            else:
-                # For the first scene, use its summary as the initial context
-                self.previous_summary_context = scene_summary
+            self.previous_summary_context = scene_summary
 
             # Save the current state of the summary in the output directory
             in_progress_file = os.path.join(
@@ -641,68 +633,13 @@ class AnthropicSummaryGenerator(PipelineStage):
             with open(in_progress_file, "w", encoding="utf-8") as f:
                 f.write(complete_summary)
 
-        # Add overall conclusion if there are enough scenes
-        if len(processed_scenes) >= 3:
-            conclusion = self._generate_conclusion(processed_scenes)
-            complete_summary += "\n\n## Conclusion\n\n"
-            complete_summary += conclusion
-
         return complete_summary
 
     def _generate_overall_introduction(
             self, initial_scenes: List[Scene]) -> str:
         """Generate an overall introduction based on the first few scenes."""
-        try:
-            # Import here to avoid import error if the function is not used
-            import anthropic
-
-            # Encode the first screenshot as base64
-            base64_image = self._encode_image(initial_scenes[0].screenshot)
-
-            # Create a prompt that requests an introduction based on initial
-            # scenes
-            intro_prompt = (
-                "This is the opening frame of a technical presentation or demo video. "
-                "Based on this image, generate a brief introduction (2-3 sentences) for the entire video summary. "
-                "Focus on identifying the main topic and purpose of the presentation. "
-                "Use a formal, concise style appropriate for a technical summary.")
-
-            # Create message with the Anthropic client
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=600,  # Short intro needs fewer tokens
-                system=self.system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": base64_image
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": intro_prompt
-                            }
-                        ]
-                    }
-                ]
-            )
-
-            # Extract the response text
-            intro_text = message.content[0].text
-
-            print("Generated overall introduction")
-            return intro_text
-
-        except Exception as e:
-            error_msg = f"Error generating introduction: {str(e)}"
-            print(error_msg)
-            return "*Introduction could not be generated*"
+        # Method kept for compatibility but no longer used
+        return ""
 
     def _encode_image(self, image_path: str) -> str:
         """Encode image as base64 for API request."""
@@ -713,11 +650,11 @@ class AnthropicSummaryGenerator(PipelineStage):
             self, scene_id: int, screenshot_path: str, transcript: str,
             start_time: float, end_time: float, scene_index: int,
             total_scenes: int) -> str:
-        """Generate a summary for a single scene using Claude 3.7's multimodal capabilities."""
+        """
+        Generate a summary for a single scene using Claude 3.7's
+        multimodal capabilities.
+        """
         try:
-            # Import here to avoid import error if the function is not used
-            import anthropic
-
             # Encode the screenshot as base64
             base64_image = self._encode_image(screenshot_path)
 
@@ -732,12 +669,12 @@ class AnthropicSummaryGenerator(PipelineStage):
                 # Last scene - wrap up and connect to previous content
                 context_directive = (
                     f"This is the final scene. Connect it with previous content and provide closure on the topic. "
-                    f"Previous summary context: \"{self.previous_summary_context[:200]}...\"")
+                    f"Previous summary context: \"{self.previous_summary_context}...\"")
             else:
                 # Middle scene - maintain continuity
                 context_directive = (
                     f"Connect this scene with the previous content for a cohesive summary. "
-                    f"Previous summary context: \"{self.previous_summary_context[:200]}...\"")
+                    f"Previous summary context: \"{self.previous_summary_context}...\"")
 
             # Optimize transcript inclusion based on language
             if "你好" in transcript or "我们" in transcript or "这是" in transcript:
@@ -748,25 +685,24 @@ class AnthropicSummaryGenerator(PipelineStage):
                 transcript_preview = transcript
                 transcript_note = ""
 
-            # Create the user prompt with emphasis on image analysis
+            # Create the user prompt for balanced analysis suitable for general
+            # audience
             user_prompt = (
                 f"This is frame {scene_id} from a technical presentation video (timestamp: {start_time:.2f}s to {end_time:.2f}s).\n\n"
                 f"Transcript preview: {transcript_preview}\n"
                 f"{transcript_note}\n\n"
                 f"{context_directive}\n\n"
-                "IMPORTANT: FOCUS PRIMARILY ON THE VISUAL CONTENT in the image, as the transcript may contain inaccuracies.\n\n"
-                "Please provide a concise summary that includes:\n"
-                "1. Key technical concepts visible in the slide/demo\n"
-                "2. Any relevant data, diagrams, or metrics shown\n"
-                "3. The apparent main point of this segment\n\n"
-                "Keep your summary technical and focused on what you can actually see in the image.")
+                "IMPORTANT: USE BOTH THE VISUAL CONTENT AND TRANSCRIPT to create a comprehensive summary.\n\n"
+                "Please provide a detailed summary that includes:\n"
+                "1. Key technical concepts from both the slide/demo and speaker's explanation\n"
+                "2. Any relevant data, diagrams, or metrics with context from the transcript\n"
+                "3. The main point of this segment, explaining technical terms in an intuitive yet rigorous way\n\n"
+                "Make your summary accessible to a general audience by explaining technical terms using everyday language, analogies, or simplified examples while maintaining technical accuracy.")
 
             # Create message with the Anthropic client
             message = self.client.messages.create(
                 model=self.model,
-                # Limit token usage per scene but allow enough for technical
-                # depth
-                max_tokens=min(self.max_tokens, 1000),
+                max_tokens=min(self.max_tokens, 3000),
                 system=self.system_prompt,
                 messages=[
                     {
@@ -790,7 +726,7 @@ class AnthropicSummaryGenerator(PipelineStage):
             )
 
             # Extract the response text
-            generated_text = message.content[0].text
+            generated_text = "##" + message.content[0].text
 
             print(f"Generated summary for scene {scene_id}")
             return generated_text
@@ -800,67 +736,6 @@ class AnthropicSummaryGenerator(PipelineStage):
             print(error_msg)
             return f"*{error_msg}*"
 
-    def _generate_conclusion(self, processed_scenes: List[Scene]) -> str:
-        """Generate an overall conclusion based on the completed summaries."""
-        try:
-            # Import here to avoid import error if the function is not used
-            import anthropic
-
-            # Create a condensed version of all summaries to provide context
-            all_summaries = ""
-            for scene_id in sorted(
-                    self.summaries.keys())[
-                    : 3]:  # Use only first 3 scenes to limit tokens
-                all_summaries += f"Scene {scene_id}: {self.summaries[scene_id][:100]}...\n\n"
-
-            # Get the last screenshot for visual context
-            last_scene = processed_scenes[-1]
-            base64_image = self._encode_image(last_scene.screenshot)
-
-            conclusion_prompt = (
-                "Based on the entire presentation as summarized in the preceding sections, "
-                "generate a brief conclusion (3-4 sentences) that captures the overall significance "
-                "and key takeaways of this technical presentation.\n\n"
-                f"Context from summaries:\n{all_summaries}\n\n"
-                "Focus on the main technical contributions, innovations, or solutions presented. "
-                "Your conclusion should provide closure to the summary while highlighting the most important points.")
-
-            # Create message with the Anthropic client
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=600,
-                system=self.system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": base64_image
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": conclusion_prompt
-                            }
-                        ]
-                    }
-                ]
-            )
-
-            # Extract the response text
-            conclusion_text = message.content[0].text
-
-            print("Generated conclusion")
-            return conclusion_text
-
-        except Exception as e:
-            error_msg = f"Error generating conclusion: {str(e)}"
-            print(error_msg)
-            return "*Conclusion could not be generated*"
 
 # ---------------------------------------------------------
 # Pipeline Manager to Orchestrate the Pipeline Stages
@@ -917,7 +792,7 @@ if __name__ == "__main__":
         "--threshold", type=float, default=45.0,
         help="Threshold for scene detection")
     parser.add_argument(
-        "--downscale", type=int, default=64,
+        "--downscale", type=int, default=128,
         help="Downscale factor for scene detection")
     parser.add_argument(
         "--use-whisper", action="store_true",
