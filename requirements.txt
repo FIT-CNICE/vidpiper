@@ -8,6 +8,9 @@ scenedetect>=0.6.1
 openai-whisper>=20240901
 torch>=2.0.0
 
+# For summary generation
+anthropic>=0.49.0
+
 # For system utilities
 python-dotenv>=0.19.0
 
