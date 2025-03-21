@@ -53,7 +53,7 @@ def get_test_stage_status(stage_name):
     elif stage_name == "scene_processor":
         # Check if scene detection output exists
         return os.path.exists(os.path.join(
-            TEST_OUTPUT_DIR, "scenes_threshold_20.0.json"))
+            TEST_OUTPUT_DIR, "scenes_test.json"))
 
     elif stage_name == "summary_generator":
         # Check if processed scenes exist
