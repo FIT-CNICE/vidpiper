@@ -57,7 +57,7 @@ class SceneDetector(PipelineStage):
 
     def __init__(self, threshold: float = 30.0, downscale_factor: int = 64,
                  min_scene_len: int = 15, timeout_seconds: int = 180,
-                 max_size_mb: float = 5.0):
+                 max_size_mb: float = 25.0):
         self.threshold = threshold
         self.downscale_factor = downscale_factor
         self.min_scene_len = min_scene_len  # Minimum scene length in frames
@@ -387,19 +387,23 @@ class SceneProcessor(PipelineStage):
         """Detect language from a sample audio clip at the beginning of the video."""
         try:
             import whisper
-            
-            # Extract a small audio clip from the beginning of the video for language detection
-            sample_audio_path = self._extract_audio_clip(0, 10)  # First 10 seconds
-            
+
+            # Extract a small audio clip from the beginning of the video for
+            # language detection
+            sample_audio_path = self._extract_audio_clip(
+                0, 10)  # First 10 seconds
+
             print("Detecting language...")
             audio = whisper.load_audio(sample_audio_path)
             audio = whisper.pad_or_trim(audio)
-            mel = whisper.log_mel_spectrogram(audio).to(self.whisper_model_instance.device)
-            
+            mel = whisper.log_mel_spectrogram(audio).to(
+                self.whisper_model_instance.device)
+
             _, probs = self.whisper_model_instance.detect_language(mel)
             self.detected_language = max(probs, key=probs.get)
-            print(f"Detected language: {self.detected_language} (confidence: {probs[self.detected_language]:.2f})")
-            
+            print(
+                f"Detected language: {self.detected_language} (confidence: {probs[self.detected_language]:.2f})")
+
         except Exception as e:
             print(f"Error detecting language: {e}")
             self.detected_language = None  # Default to auto-detection if this fails
@@ -480,7 +484,7 @@ class SceneProcessor(PipelineStage):
         try:
             import whisper
             import torch
-            
+
             # Run transcription with the detected language
             transcription_options = {
                 "fp16": torch.cuda.is_available(),  # Use half-precision on GPU
@@ -488,20 +492,21 @@ class SceneProcessor(PipelineStage):
                 "best_of": 5,  # Consider more candidates for better results
                 "task": "transcribe"  # Force transcription task
             }
-            
+
             # Add language parameter only if we have detected one
             if self.detected_language:
                 transcription_options["language"] = self.detected_language
-            
+
             result = self.whisper_model_instance.transcribe(
                 audio_clip_path, **transcription_options
             )
 
             transcript = result["text"].strip()
             lang_info = f"in {self.detected_language}" if self.detected_language else ""
-            print(f"Successfully transcribed audio {lang_info} ({start:.2f}-{end:.2f}s)")
+            print(
+                f"Successfully transcribed audio {lang_info} ({start:.2f}-{end:.2f}s)")
             return transcript
-            
+
         except Exception as e:
             print(f"Error during transcription with Whisper: {e}")
             return self._placeholder_transcript(start, end)
@@ -538,7 +543,7 @@ class AnthropicSummaryGenerator(PipelineStage):
     """
 
     def __init__(self, model: str = "claude-3-7-sonnet-20250219",
-                 max_tokens: int = 1000):
+                 max_tokens: int = 1000, output_dir: str = "output"):
         try:
             import anthropic
         except ImportError:
@@ -553,6 +558,7 @@ class AnthropicSummaryGenerator(PipelineStage):
         self.client = anthropic.Anthropic(api_key=self.api_key)
         self.model = model
         self.max_tokens = max_tokens
+        self.output_dir = output_dir  # Store the output directory
         self.summaries = {}  # Store individual scene summaries
         self.previous_summary_context = ""  # Track previous summary for continuity
         self.processed_scenes_count = 0  # Track number of processed scenes
@@ -595,9 +601,11 @@ class AnthropicSummaryGenerator(PipelineStage):
             # Generate section heading
             scene_heading = f"## Scene {scene_id} - [{timestamp}]\n\n"
 
-            # Add screenshot reference
+            # Add screenshot reference with a relative path
             screenshot_filename = os.path.basename(screenshot_path)
-            screenshot_ref = f"![Scene {scene_id} Screenshot]({screenshot_path})\n\n"
+            # Use relative path for screenshots in the markdown
+            relative_screenshot_path = f"./screenshots/{screenshot_filename}"
+            screenshot_ref = f"![Scene {scene_id} Screenshot]({relative_screenshot_path})\n\n"
 
             # Get summary for this scene using multimodal API with awareness of
             # previous content
@@ -627,8 +635,10 @@ class AnthropicSummaryGenerator(PipelineStage):
                 # For the first scene, use its summary as the initial context
                 self.previous_summary_context = scene_summary
 
-            # Save the current state of the summary
-            with open("summary_in_progress.md", "w", encoding="utf-8") as f:
+            # Save the current state of the summary in the output directory
+            in_progress_file = os.path.join(
+                self.output_dir, "summary_in_progress.md")
+            with open(in_progress_file, "w", encoding="utf-8") as f:
                 f.write(complete_summary)
 
         # Add overall conclusion if there are enough scenes
@@ -660,7 +670,7 @@ class AnthropicSummaryGenerator(PipelineStage):
             # Create message with the Anthropic client
             message = self.client.messages.create(
                 model=self.model,
-                max_tokens=200,  # Short intro needs fewer tokens
+                max_tokens=600,  # Short intro needs fewer tokens
                 system=self.system_prompt,
                 messages=[
                     {
@@ -732,12 +742,10 @@ class AnthropicSummaryGenerator(PipelineStage):
             # Optimize transcript inclusion based on language
             if "你好" in transcript or "我们" in transcript or "这是" in transcript:
                 # For Chinese content, use a shorter portion to reduce tokens
-                transcript_preview = transcript[:100] + "..." if len(
-                    transcript) > 100 else transcript
+                transcript_preview = transcript
                 transcript_note = "Note: This appears to be primarily in Chinese. Focus mainly on what you can see in the image."
             else:
-                transcript_preview = transcript[:200] + "..." if len(
-                    transcript) > 200 else transcript
+                transcript_preview = transcript
                 transcript_note = ""
 
             # Create the user prompt with emphasis on image analysis
@@ -758,7 +766,7 @@ class AnthropicSummaryGenerator(PipelineStage):
                 model=self.model,
                 # Limit token usage per scene but allow enough for technical
                 # depth
-                max_tokens=min(self.max_tokens, 800),
+                max_tokens=min(self.max_tokens, 1000),
                 system=self.system_prompt,
                 messages=[
                     {
@@ -820,7 +828,7 @@ class AnthropicSummaryGenerator(PipelineStage):
             # Create message with the Anthropic client
             message = self.client.messages.create(
                 model=self.model,
-                max_tokens=300,
+                max_tokens=600,
                 system=self.system_prompt,
                 messages=[
                     {
@@ -925,13 +933,20 @@ if __name__ == "__main__":
         "--timeout", type=int, default=180,
         help="Timeout in seconds for scene detection (default: 180)")
     parser.add_argument(
-        "--max-size", type=float, default=5.0,
-        help="Maximum size of scenes in MB (default: 5.0)")
+        "--max-size", type=float, default=20.0,
+        help="Maximum size of scenes in MB (default: 20.0)")
 
     args = parser.parse_args()
 
-    # Create output directory
-    output_dir = args.output_dir
+    # Create output directory based on video filename if not specified
+    if args.output_dir == "output":
+        # Extract the base filename without extension
+        video_basename = os.path.basename(args.video_path)
+        video_name = os.path.splitext(video_basename)[0]
+        output_dir = f"{video_name}_output"
+    else:
+        output_dir = args.output_dir
+
     os.makedirs(output_dir, exist_ok=True)
 
     # Instantiate pipeline stages
@@ -945,7 +960,9 @@ if __name__ == "__main__":
         output_dir=output_dir,
         use_whisper=True)  # Now using Whisper by default
     summary_generator = AnthropicSummaryGenerator(
-        model=args.model, max_tokens=args.max_tokens)
+        model=args.model,
+        max_tokens=args.max_tokens,
+        output_dir=output_dir)
 
     # Assemble and run the pipeline
     pipeline = PipelineManager([
@@ -957,11 +974,26 @@ if __name__ == "__main__":
     # Create input data with video path
     input_data = {"video_path": args.video_path}
 
-    # Run the pipeline
-    final_markdown_summary = pipeline.run(input_data)
+    try:
+        # Run the pipeline
+        final_markdown_summary = pipeline.run(input_data)
 
-    # Save the final markdown summary to a file
-    summary_file = os.path.join(output_dir, "summary.md")
-    with open(summary_file, "w") as f:
-        f.write(final_markdown_summary)
-    print(f"Pipeline complete. Markdown summary saved to: {summary_file}")
+        # Save the final markdown summary to a file with video name + _sum
+        # suffix
+        video_basename = os.path.basename(args.video_path)
+        video_name = os.path.splitext(video_basename)[0]
+        summary_file = os.path.join(output_dir, f"{video_name}_sum.md")
+
+        with open(summary_file, "w") as f:
+            f.write(final_markdown_summary)
+        print(f"Pipeline complete. Markdown summary saved to: {summary_file}")
+
+        # Clean up the in-progress summary file if it exists
+        in_progress_file = os.path.join(output_dir, "summary_in_progress.md")
+        if os.path.exists(in_progress_file):
+            os.remove(in_progress_file)
+            print(f"Removed temporary file: {in_progress_file}")
+
+    except Exception as e:
+        print(f"Pipeline failed with error: {e}")
+        raise
