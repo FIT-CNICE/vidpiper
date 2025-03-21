@@ -1,3 +1,4 @@
 vid/
+tests/output/
 __pycache__/
 .ropeproject/

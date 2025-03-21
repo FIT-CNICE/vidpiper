@@ -288,15 +288,20 @@ class SceneDetector(PipelineStage):
 class SceneProcessor(PipelineStage):
     """
     For each detected scene, extracts a screenshot (using FFmpeg)
-    at the midpoint and generates a transcript.
+    at the midpoint and generates a transcript using Whisper when available.
     """
 
     def __init__(self, video_path: str, output_dir: str,
-                 use_whisper: bool = False):
+                 use_whisper: bool = True, whisper_model: str = "base"):
         self.video_path = video_path
         self.output_dir = output_dir
         self.use_whisper = use_whisper
+        self.whisper_model = whisper_model
         self.temp_files = []
+
+        # Verify video path exists
+        if not os.path.exists(self.video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
 
         # Create output directories
         os.makedirs(output_dir, exist_ok=True)
@@ -304,6 +309,10 @@ class SceneProcessor(PipelineStage):
 
     def run(self, scenes: List[Scene]) -> List[Scene]:
         print("Stage 2: Extracting screenshots and transcripts for each scene")
+
+        # Check if whisper is available and determine the best model to use
+        if self.use_whisper:
+            self._check_whisper_availability()
 
         for scene in scenes:
             # Generate screenshot filename
@@ -326,7 +335,43 @@ class SceneProcessor(PipelineStage):
 
         return scenes
 
-    def extract_screenshot(self, timestamp: float, output_path: str):
+    def _check_whisper_availability(self):
+        """Check if Whisper is available and select the appropriate model."""
+        try:
+            import whisper
+            import torch
+            
+            # Check available VRAM to determine the appropriate model size
+            if torch.cuda.is_available():
+                vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+                print(f"Found GPU with {vram_gb:.2f} GB VRAM")
+                
+                # Select model based on available VRAM
+                if vram_gb > 10:
+                    self.whisper_model = "medium"
+                    print("Using medium Whisper model")
+                elif vram_gb > 5:
+                    self.whisper_model = "small"
+                    print("Using small Whisper model")
+                elif vram_gb > 2:
+                    self.whisper_model = "base"
+                    print("Using base Whisper model")
+                else:
+                    self.whisper_model = "tiny"
+                    print("Using tiny Whisper model due to limited VRAM")
+            else:
+                print("No GPU detected, using tiny Whisper model on CPU")
+                self.whisper_model = "tiny"
+                
+        except ImportError:
+            print("Whisper not installed. Will use placeholder transcripts.")
+            self.use_whisper = False
+        except Exception as e:
+            print(f"Error checking Whisper availability: {e}")
+            self.use_whisper = False
+
+    def extract_screenshot(self, timestamp: float, output_path: str) -> None:
+        """Extract a screenshot from the video at the specified timestamp."""
         cmd = [
             "ffmpeg",
             "-ss", str(timestamp),
@@ -336,10 +381,23 @@ class SceneProcessor(PipelineStage):
             output_path,
             "-y"  # Overwrite output file if exists
         ]
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print(f"Extracted screenshot at {timestamp:.2f}s to {output_path}")
+        
+        try:
+            result = subprocess.run(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                check=True,
+                text=True
+            )
+            print(f"Extracted screenshot at {timestamp:.2f}s to {output_path}")
+        except subprocess.CalledProcessError as e:
+            print(f"Error extracting screenshot at {timestamp:.2f}s: {e}")
+            print(f"STDERR: {e.stderr}")
+            # Continue processing despite error
 
     def extract_transcript(self, start: float, end: float) -> str:
+        """Extract transcript for the specified time range."""
         if self.use_whisper:
             try:
                 return self._transcribe_with_whisper(start, end)
@@ -365,32 +423,47 @@ class SceneProcessor(PipelineStage):
             output_path
         ]
 
-        subprocess.run(cmd, check=True)
-        return output_path
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return output_path
+        except subprocess.CalledProcessError as e:
+            print(f"Error extracting audio for scene ({start:.2f}-{end:.2f}s): {e}")
+            raise
 
     def _transcribe_with_whisper(self, start: float, end: float) -> str:
-        """Transcribe audio using Whisper (if available)."""
+        """Transcribe audio using Whisper."""
         try:
             import whisper
+            import torch
         except ImportError:
             print("Whisper not installed. Using placeholder transcript.")
             return self._placeholder_transcript(start, end)
 
         # Extract audio clip for this scene
-        audio_clip_path = self._extract_audio_clip(start, end)
+        try:
+            audio_clip_path = self._extract_audio_clip(start, end)
+        except subprocess.CalledProcessError:
+            return self._placeholder_transcript(start, end)
 
-        # Load the tiny Whisper model (least VRAM intensive)
-        model = whisper.load_model("tiny", device="cuda")
+        try:
+            # Load the appropriate Whisper model
+            print(f"Loading {self.whisper_model} Whisper model...")
+            model = whisper.load_model(self.whisper_model, device="cuda" if torch.cuda.is_available() else "cpu")
 
-        # Run transcription with memory-efficient settings
-        result = model.transcribe(
-            audio_clip_path,
-            fp16=False,  # Disable half-precision to reduce memory issues
-            beam_size=1,  # Reduce beam size
-            best_of=1    # Only return the top result
-        )
+            # Run transcription with memory-efficient settings
+            result = model.transcribe(
+                audio_clip_path,
+                fp16=torch.cuda.is_available(),  # Use half-precision on GPU
+                beam_size=1,  # Reduce beam size
+                best_of=1     # Only return the top result
+            )
 
-        return result["text"].strip()
+            transcript = result["text"].strip()
+            print(f"Successfully transcribed audio ({start:.2f}-{end:.2f}s)")
+            return transcript
+        except Exception as e:
+            print(f"Error during transcription with Whisper: {e}")
+            return self._placeholder_transcript(start, end)
 
     def _placeholder_transcript(self, start: float, end: float) -> str:
         """Generate a placeholder transcript."""
@@ -635,7 +708,7 @@ if __name__ == "__main__":
     scene_processor = SceneProcessor(
         video_path=args.video_path,
         output_dir=output_dir,
-        use_whisper=args.use_whisper)
+        use_whisper=True)  # Now using Whisper by default
     summary_generator = AnthropicSummaryGenerator(
         model=args.model, max_tokens=args.max_tokens)
 

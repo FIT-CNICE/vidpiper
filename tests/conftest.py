@@ -15,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEST_VIDEO_PATH = os.path.join(
     BASE_DIR,
-    "vid/an-ai-team-lead-guide.mp4")
-# "vid/distributed-light-baking-system-powered-by-optix-7.mp4")
+    # "vid/an-ai-team-lead-guide.mp4")
+    "vid/distributed-light-baking-system-powered-by-optix-7.mp4")
 TEST_OUTPUT_DIR = os.path.join(BASE_DIR, "tests/output")
 
 # Create output directories
@@ -53,7 +53,7 @@ def get_test_stage_status(stage_name):
     elif stage_name == "scene_processor":
         # Check if scene detection output exists
         return os.path.exists(os.path.join(
-            TEST_OUTPUT_DIR, "scenes_threshold_30.0.json"))
+            TEST_OUTPUT_DIR, "scenes_threshold_20.0.json"))
 
     elif stage_name == "summary_generator":
         # Check if processed scenes exist

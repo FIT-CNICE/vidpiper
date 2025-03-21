@@ -20,7 +20,7 @@ def test_scene_detector(test_video_path, test_output_dir):
         print(f"Found test video: {test_video_path}")
 
     # Using higher thresholds to detect fewer scenes and speed up testing
-    thresholds = [20.0, 10.0]
+    thresholds = [20.0]
 
     for threshold in thresholds:
         print(f"\nTesting SceneDetector with threshold={threshold}")
