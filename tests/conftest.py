@@ -21,7 +21,7 @@ TEST_OUTPUT_DIR = os.path.join(BASE_DIR, "tests/output")
 
 # Create output directories
 os.makedirs(TEST_OUTPUT_DIR, exist_ok=True)
-os.makedirs(os.path.join(TEST_OUTPUT_DIR, "screenshots"), exist_ok=True)
+# os.makedirs(os.path.join(TEST_OUTPUT_DIR, "screenshots"), exist_ok=True)
 os.makedirs(os.path.join(TEST_OUTPUT_DIR, "processor_output"), exist_ok=True)
 os.makedirs(
     os.path.join(

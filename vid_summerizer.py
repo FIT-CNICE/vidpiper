@@ -340,12 +340,13 @@ class SceneProcessor(PipelineStage):
         try:
             import whisper
             import torch
-            
+
             # Check available VRAM to determine the appropriate model size
             if torch.cuda.is_available():
-                vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+                vram_gb = torch.cuda.get_device_properties(
+                    0).total_memory / 1e9
                 print(f"Found GPU with {vram_gb:.2f} GB VRAM")
-                
+
                 # Select model based on available VRAM
                 if vram_gb > 10:
                     self.whisper_model = "medium"
@@ -362,7 +363,7 @@ class SceneProcessor(PipelineStage):
             else:
                 print("No GPU detected, using tiny Whisper model on CPU")
                 self.whisper_model = "tiny"
-                
+
         except ImportError:
             print("Whisper not installed. Will use placeholder transcripts.")
             self.use_whisper = False
@@ -381,11 +382,11 @@ class SceneProcessor(PipelineStage):
             output_path,
             "-y"  # Overwrite output file if exists
         ]
-        
+
         try:
             result = subprocess.run(
-                cmd, 
-                stdout=subprocess.PIPE, 
+                cmd,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=True,
                 text=True
@@ -424,14 +425,19 @@ class SceneProcessor(PipelineStage):
         ]
 
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE)
             return output_path
         except subprocess.CalledProcessError as e:
-            print(f"Error extracting audio for scene ({start:.2f}-{end:.2f}s): {e}")
+            print(
+                f"Error extracting audio for scene ({start:.2f}-{end:.2f}s): {e}")
             raise
 
     def _transcribe_with_whisper(self, start: float, end: float) -> str:
-        """Transcribe audio using Whisper."""
+        """Transcribe audio using Whisper with improved language detection."""
         try:
             import whisper
             import torch
@@ -448,18 +454,32 @@ class SceneProcessor(PipelineStage):
         try:
             # Load the appropriate Whisper model
             print(f"Loading {self.whisper_model} Whisper model...")
-            model = whisper.load_model(self.whisper_model, device="cuda" if torch.cuda.is_available() else "cpu")
+            model = whisper.load_model(
+                self.whisper_model, device="cuda"
+                if torch.cuda.is_available() else "cpu")
 
-            # Run transcription with memory-efficient settings
+            # First, detect the language of the audio
+            print("Detecting language...")
+            audio = whisper.load_audio(audio_clip_path)
+            audio = whisper.pad_or_trim(audio)
+            mel = whisper.log_mel_spectrogram(audio).to(model.device)
+            
+            _, probs = model.detect_language(mel)
+            detected_language = max(probs, key=probs.get)
+            print(f"Detected language: {detected_language} (confidence: {probs[detected_language]:.2f})")
+            
+            # Run transcription with the detected language
             result = model.transcribe(
                 audio_clip_path,
                 fp16=torch.cuda.is_available(),  # Use half-precision on GPU
-                beam_size=1,  # Reduce beam size
-                best_of=1     # Only return the top result
+                beam_size=5,                     # Increase beam size for better accuracy
+                best_of=5,                       # Consider more candidates for better results
+                language=detected_language,      # Explicitly set detected language
+                task="transcribe"                # Force transcription task
             )
 
             transcript = result["text"].strip()
-            print(f"Successfully transcribed audio ({start:.2f}-{end:.2f}s)")
+            print(f"Successfully transcribed audio in {detected_language} ({start:.2f}-{end:.2f}s)")
             return transcript
         except Exception as e:
             print(f"Error during transcription with Whisper: {e}")
@@ -564,7 +584,9 @@ class AnthropicSummaryGenerator(PipelineStage):
     def _generate_scene_summary(
             self, scene_id: int, screenshot_path: str, transcript: str,
             start_time: float, end_time: float) -> str:
-        """Generate a summary for a single scene using Claude 3.7's multimodal capabilities."""
+        """Generate a summary for a single scene using Claude 3.7's
+        multimodal capabilities.
+        """
         try:
             # Encode the screenshot as base64
             base64_image = self._encode_image(screenshot_path)

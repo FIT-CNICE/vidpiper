@@ -4,8 +4,9 @@ numpy>=1.19.0
 requests>=2.25.0
 scenedetect>=0.6.1
 
-# For transcript generation (optional)
-whisper>=1.0.0
+# For transcript generation
+openai-whisper>=20240901
+torch>=2.0.0
 
 # For system utilities
 python-dotenv>=0.19.0
