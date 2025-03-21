@@ -18,7 +18,7 @@ def test_scene_processor(test_video_path, test_output_dir):
 
     # Load or create sample scenes
     sample_scenes_file = os.path.join(
-        test_output_dir, "scenes_threshold_20.0.json")
+        test_output_dir, "scenes_test.json")
 
     if os.path.exists(sample_scenes_file):
         print(f"Loading sample scenes from {sample_scenes_file}")

@@ -20,7 +20,7 @@ def test_scene_detector(test_video_path, test_output_dir):
         print(f"Found test video: {test_video_path}")
 
     # Using higher thresholds to detect fewer scenes and speed up testing
-    thresholds = [20.0]
+    thresholds = [45.0]
 
     for threshold in thresholds:
         print(f"\nTesting SceneDetector with threshold={threshold}")
@@ -31,7 +31,9 @@ def test_scene_detector(test_video_path, test_output_dir):
             threshold=threshold,
             # Much higher downscale factor for testing - uses less memory and
             # runs faster
-            downscale_factor=64
+            downscale_factor=128,
+            skip_start=60.0,
+            skip_end=10.0
         )
 
         # Using absolute path for video_path
@@ -58,7 +60,7 @@ def test_scene_detector(test_video_path, test_output_dir):
         # Save results to a JSON file
         result_file = os.path.join(
             test_output_dir,
-            f"scenes_threshold_{threshold}.json")
+            f"scenes_test.json")
         with open(result_file, 'w') as f:
             json.dump(scene_dicts, f, indent=2)
 

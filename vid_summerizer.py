@@ -53,18 +53,26 @@ class SceneDetector(PipelineStage):
     If no scenes are detected within the timeout period (default 3 minutes),
     or if detected scenes are too large (>5MB), the video will be divided
     into appropriate segments automatically.
+
+    Supports skipping portions at the beginning and end of videos that might contain
+    irrelevant content (intros, credits, etc.).
     """
 
     def __init__(self, threshold: float = 30.0, downscale_factor: int = 64,
                  min_scene_len: int = 15, timeout_seconds: int = 180,
-                 max_size_mb: float = 20.0):
+                 max_size_mb: float = 20.0, skip_start: float = 0.0,
+                 skip_end: float = 0.0):
         self.threshold = threshold
         self.downscale_factor = downscale_factor
         self.min_scene_len = min_scene_len  # Minimum scene length in frames
         # Timeout for scene detection (default 3 min)
         self.timeout_seconds = timeout_seconds
-        # Maximum scene size in MB (default 5MB)
+        # Maximum scene size in MB (default 20MB)
         self.max_size_mb = max_size_mb
+        # Number of seconds to skip at the beginning of the video
+        self.skip_start = skip_start
+        # Number of seconds to skip at the end of the video
+        self.skip_end = skip_end
 
     def run(self, input_data: Dict) -> List[Scene]:
         video_path = input_data.get("video_path")
@@ -78,6 +86,20 @@ class SceneDetector(PipelineStage):
         # Get video duration using ffprobe
         video_duration = self._get_video_duration(video_path)
         print(f"Video duration: {video_duration:.2f} seconds")
+
+        # Apply skip parameters
+        effective_start = self.skip_start
+        effective_end = video_duration - self.skip_end
+
+        # Validate skip parameters
+        if effective_start >= effective_end:
+            raise ValueError(
+                f"Invalid skip parameters: start ({self.skip_start}s) and end ({self.skip_end}s) " +
+                f"would leave no content in the {video_duration:.2f}s video")
+
+        print(
+            f"Processing video from {effective_start:.2f}s to {effective_end:.2f}s " +
+            f"(skipping first {self.skip_start:.2f}s and last {self.skip_end:.2f}s)")
 
         # Attempt scene detection with timeout
         scenes = []
@@ -137,13 +159,19 @@ class SceneDetector(PipelineStage):
         # Set downscale factor to reduce memory usage
         video_manager.set_downscale_factor(self.downscale_factor)
 
+        # Get video duration
+        video_duration = self._get_video_duration(video_path)
+        effective_start = self.skip_start
+        effective_end = video_duration - self.skip_end
+
         # Perform scene detection
         try:
             # Start video manager
             video_manager.start()
 
             # Detect scenes
-            print("Detecting scenes...")
+            print(
+                f"Detecting scenes from {effective_start:.2f}s to {effective_end:.2f}s...")
             scene_manager.detect_scenes(frame_source=video_manager)
 
             # Get scene list
@@ -154,13 +182,21 @@ class SceneDetector(PipelineStage):
             for i, scene in enumerate(scene_list):
                 start_time = scene[0].get_seconds()
                 end_time = scene[1].get_seconds()
-                scenes.append(Scene(
-                    scene_id=i + 1,
-                    start=start_time,
-                    end=end_time
-                ))
 
-            print(f"Detected {len(scenes)} scenes.")
+                # Only include scenes that fall within our effective range
+                if end_time > effective_start and start_time < effective_end:
+                    # Clip scenes to effective range if needed
+                    start_time = max(start_time, effective_start)
+                    end_time = min(end_time, effective_end)
+
+                    scenes.append(Scene(
+                        scene_id=i + 1,
+                        start=start_time,
+                        end=end_time
+                    ))
+
+            print(
+                f"Detected {len(scenes)} scenes within specified time range.")
             return scenes
         finally:
             video_manager.release()
@@ -213,26 +249,39 @@ class SceneDetector(PipelineStage):
 
     def _divide_video_into_segments(
             self, video_path: str, video_duration: float) -> List[Scene]:
-        """Divide the video into equal segments under max_size_mb."""
-        # Calculate how many segments we need
-        # Estimate total video size and divide by max size per segment
-        total_size_mb = self._get_scene_size_mb(video_path, 0, video_duration)
+        """Divide the video into equal segments under max_size_mb, respecting skip parameters."""
+        # Apply skip parameters
+        effective_start = self.skip_start
+        effective_end = video_duration - self.skip_end
+        effective_duration = effective_end - effective_start
+
+        if effective_duration <= 0:
+            raise ValueError(
+                f"Invalid skip parameters: start ({self.skip_start}s) and end ({self.skip_end}s) " +
+                f"would leave no content in the {video_duration:.2f}s video")
+
+        # Calculate how many segments we need based on effective duration
+        total_size_mb = self._get_scene_size_mb(
+            video_path, effective_start, effective_end)
         num_segments = max(1, int(total_size_mb / self.max_size_mb) + 1)
 
-        # Create equal segments
-        segment_duration = video_duration / num_segments
+        # Create equal segments within the effective range
+        segment_duration = effective_duration / num_segments
         scenes = []
 
         for i in range(num_segments):
-            start_time = i * segment_duration
-            end_time = min((i + 1) * segment_duration, video_duration)
+            start_time = effective_start + (i * segment_duration)
+            end_time = min(
+                effective_start + ((i + 1) * segment_duration),
+                effective_end)
             scenes.append(Scene(
                 scene_id=i + 1,
                 start=start_time,
                 end=end_time
             ))
 
-        print(f"Divided video into {len(scenes)} equal segments")
+        print(
+            f"Divided video into {len(scenes)} equal segments within the specified time range")
         return scenes
 
     def _ensure_max_scene_size(self, video_path: str,
@@ -802,7 +851,7 @@ if __name__ == "__main__":
         default="claude-3-7-sonnet-20250219",
         help="Claude model to use")
     parser.add_argument(
-        "--max-tokens", type=int, default=1000,
+        "--max-tokens", type=int, default=1500,
         help="Maximum tokens per API response")
     parser.add_argument(
         "--timeout", type=int, default=180,
@@ -810,6 +859,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-size", type=float, default=20.0,
         help="Maximum size of scenes in MB (default: 20.0)")
+    parser.add_argument(
+        "--skip-start", type=float, default=60.0,
+        help="Number of seconds to skip at the beginning of the video (default: 0.0)")
+    parser.add_argument(
+        "--skip-end", type=float, default=10.0,
+        help="Number of seconds to skip at the end of the video (default: 0.0)")
 
     args = parser.parse_args()
 
@@ -829,7 +884,9 @@ if __name__ == "__main__":
         threshold=args.threshold,
         downscale_factor=args.downscale,
         timeout_seconds=args.timeout,
-        max_size_mb=args.max_size)
+        max_size_mb=args.max_size,
+        skip_start=args.skip_start,
+        skip_end=args.skip_end)
     scene_processor = SceneProcessor(
         video_path=args.video_path,
         output_dir=output_dir,
