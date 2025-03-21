@@ -23,9 +23,8 @@ class Scene:
 # ---------------------------------------------------------
 # Stage 1: Scene Detection using PySceneDetect
 # ---------------------------------------------------------
-import scenedetect
-from scenedetect import SceneDetector as PySceneDetector
-from scenedetect import open_video, ContentDetector, Scene as PyScene
+from scenedetect import detect, ContentDetector, SceneManager
+from scenedetect.video_manager import VideoManager
 
 
 class PipelineStage(ABC):
@@ -47,9 +46,10 @@ class SceneDetector(PipelineStage):
     for systems with limited VRAM (4GB or less).
     """
 
-    def __init__(self, threshold: float = 30.0, downscale_factor: int = 2):
+    def __init__(self, threshold: float = 30.0, downscale_factor: int = 4, min_scene_len: int = 15):
         self.threshold = threshold
         self.downscale_factor = downscale_factor
+        self.min_scene_len = min_scene_len  # Minimum scene length in frames
 
     def run(self, input_data: Dict) -> List[Scene]:
         video_path = input_data.get("video_path")
@@ -57,35 +57,45 @@ class SceneDetector(PipelineStage):
             raise ValueError("Input must contain 'video_path' key")
         
         print(f"Stage 1: Detecting scenes using PySceneDetect for {video_path}...")
+        print(f"Checking if file exists: {os.path.exists(video_path)}")
         
-        # Open the video file
+        # Create a video manager and scene manager
+        video_manager = VideoManager([video_path])
+        scene_manager = SceneManager()
+        
+        # Add ContentDetector
+        scene_manager.add_detector(ContentDetector(threshold=self.threshold))
+        
+        # Set downscale factor to reduce memory usage
+        video_manager.set_downscale_factor(self.downscale_factor)
+        
+        # Perform scene detection
         try:
-            video = open_video(video_path)
-        except Exception as e:
-            print(f"Error opening video: {e}")
-            print(f"Checking if file exists: {os.path.exists(video_path)}")
-            raise ValueError(f"Could not open video file: {video_path}") from e
-        
-        # Create detector with appropriate settings for low VRAM
-        detector = ContentDetector(threshold=self.threshold)
-        
-        # Find scenes
-        print("Detecting scenes...")
-        scene_list = scenedetect.detect(video, detector, show_progress=True)
-        
-        # Convert to our Scene dataclass format
-        scenes = []
-        for i, scene in enumerate(scene_list):
-            start_time = scene[0].get_seconds()
-            end_time = scene[1].get_seconds()
-            scenes.append(Scene(
-                scene_id=i + 1,
-                start=start_time,
-                end=end_time
-            ))
-        
-        print(f"Detected {len(scenes)} scenes.")
-        return scenes
+            # Start video manager
+            video_manager.start()
+            
+            # Detect scenes
+            print("Detecting scenes...")
+            scene_manager.detect_scenes(frame_source=video_manager)
+            
+            # Get scene list
+            scene_list = scene_manager.get_scene_list()
+            
+            # Convert to our Scene dataclass format
+            scenes = []
+            for i, scene in enumerate(scene_list):
+                start_time = scene[0].get_seconds()
+                end_time = scene[1].get_seconds()
+                scenes.append(Scene(
+                    scene_id=i + 1,
+                    start=start_time,
+                    end=end_time
+                ))
+            
+            print(f"Detected {len(scenes)} scenes.")
+            return scenes
+        finally:
+            video_manager.release()
 
 # ---------------------------------------------------------
 # Stage 2: Screenshot and Transcript Extraction
