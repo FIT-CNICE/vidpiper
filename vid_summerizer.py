@@ -298,6 +298,8 @@ class SceneProcessor(PipelineStage):
         self.use_whisper = use_whisper
         self.whisper_model = whisper_model
         self.temp_files = []
+        self.whisper_model_instance = None
+        self.detected_language = None
 
         # Verify video path exists
         if not os.path.exists(self.video_path):
@@ -307,12 +309,12 @@ class SceneProcessor(PipelineStage):
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(os.path.join(output_dir, "screenshots"), exist_ok=True)
 
+        # Check if whisper is available and load model at initialization
+        if self.use_whisper:
+            self._check_whisper_availability_and_load_model()
+
     def run(self, scenes: List[Scene]) -> List[Scene]:
         print("Stage 2: Extracting screenshots and transcripts for each scene")
-
-        # Check if whisper is available and determine the best model to use
-        if self.use_whisper:
-            self._check_whisper_availability()
 
         for scene in scenes:
             # Generate screenshot filename
@@ -335,8 +337,8 @@ class SceneProcessor(PipelineStage):
 
         return scenes
 
-    def _check_whisper_availability(self):
-        """Check if Whisper is available and select the appropriate model."""
+    def _check_whisper_availability_and_load_model(self):
+        """Check if Whisper is available, select the appropriate model, and load it."""
         try:
             import whisper
             import torch
@@ -364,12 +366,43 @@ class SceneProcessor(PipelineStage):
                 print("No GPU detected, using tiny Whisper model on CPU")
                 self.whisper_model = "tiny"
 
+            # Load the model once
+            print(f"Loading {self.whisper_model} Whisper model...")
+            self.whisper_model_instance = whisper.load_model(
+                self.whisper_model, device="cuda"
+                if torch.cuda.is_available() else "cpu")
+            print(f"Successfully loaded {self.whisper_model} Whisper model")
+
+            # Detect language from the first few seconds of the video
+            self._detect_language()
+
         except ImportError:
             print("Whisper not installed. Will use placeholder transcripts.")
             self.use_whisper = False
         except Exception as e:
-            print(f"Error checking Whisper availability: {e}")
+            print(f"Error checking Whisper availability or loading model: {e}")
             self.use_whisper = False
+
+    def _detect_language(self):
+        """Detect language from a sample audio clip at the beginning of the video."""
+        try:
+            import whisper
+            
+            # Extract a small audio clip from the beginning of the video for language detection
+            sample_audio_path = self._extract_audio_clip(0, 10)  # First 10 seconds
+            
+            print("Detecting language...")
+            audio = whisper.load_audio(sample_audio_path)
+            audio = whisper.pad_or_trim(audio)
+            mel = whisper.log_mel_spectrogram(audio).to(self.whisper_model_instance.device)
+            
+            _, probs = self.whisper_model_instance.detect_language(mel)
+            self.detected_language = max(probs, key=probs.get)
+            print(f"Detected language: {self.detected_language} (confidence: {probs[self.detected_language]:.2f})")
+            
+        except Exception as e:
+            print(f"Error detecting language: {e}")
+            self.detected_language = None  # Default to auto-detection if this fails
 
     def extract_screenshot(self, timestamp: float, output_path: str) -> None:
         """Extract a screenshot from the video at the specified timestamp."""
@@ -399,7 +432,7 @@ class SceneProcessor(PipelineStage):
 
     def extract_transcript(self, start: float, end: float) -> str:
         """Extract transcript for the specified time range."""
-        if self.use_whisper:
+        if self.use_whisper and self.whisper_model_instance is not None:
             try:
                 return self._transcribe_with_whisper(start, end)
             except Exception as e:
@@ -437,14 +470,7 @@ class SceneProcessor(PipelineStage):
             raise
 
     def _transcribe_with_whisper(self, start: float, end: float) -> str:
-        """Transcribe audio using Whisper with improved language detection."""
-        try:
-            import whisper
-            import torch
-        except ImportError:
-            print("Whisper not installed. Using placeholder transcript.")
-            return self._placeholder_transcript(start, end)
-
+        """Transcribe audio using Whisper with the pre-loaded model and detected language."""
         # Extract audio clip for this scene
         try:
             audio_clip_path = self._extract_audio_clip(start, end)
@@ -452,42 +478,30 @@ class SceneProcessor(PipelineStage):
             return self._placeholder_transcript(start, end)
 
         try:
-            # Load the appropriate Whisper model
-            print(f"Loading {self.whisper_model} Whisper model...")
-            model = whisper.load_model(
-                self.whisper_model, device="cuda"
-                if torch.cuda.is_available() else "cpu")
-
-            # First, detect the language of the audio
-            print("Detecting language...")
-            audio = whisper.load_audio(audio_clip_path)
-            audio = whisper.pad_or_trim(audio)
-            mel = whisper.log_mel_spectrogram(audio).to(model.device)
-
-            _, probs = model.detect_language(mel)
-            detected_language = max(probs, key=probs.get)
-            print(
-                f"Detected language: {detected_language} (confidence: {probs[detected_language]:.2f})")
-
+            import whisper
+            import torch
+            
             # Run transcription with the detected language
-            result = model.transcribe(
-                audio_clip_path,
-                # Use half-precision on GPU
-                fp16=torch.cuda.is_available(),
-                # Increase beam size for better accuracy
-                beam_size=5,
-                # Consider more candidates for better results
-                best_of=5,
-                # Explicitly set detected language
-                language=detected_language,
-                # Force transcription task
-                task="transcribe"
+            transcription_options = {
+                "fp16": torch.cuda.is_available(),  # Use half-precision on GPU
+                "beam_size": 5,  # Increase beam size for better accuracy
+                "best_of": 5,  # Consider more candidates for better results
+                "task": "transcribe"  # Force transcription task
+            }
+            
+            # Add language parameter only if we have detected one
+            if self.detected_language:
+                transcription_options["language"] = self.detected_language
+            
+            result = self.whisper_model_instance.transcribe(
+                audio_clip_path, **transcription_options
             )
 
             transcript = result["text"].strip()
-            print(
-                f"Successfully transcribed audio in {detected_language} ({start:.2f}-{end:.2f}s)")
+            lang_info = f"in {self.detected_language}" if self.detected_language else ""
+            print(f"Successfully transcribed audio {lang_info} ({start:.2f}-{end:.2f}s)")
             return transcript
+            
         except Exception as e:
             print(f"Error during transcription with Whisper: {e}")
             return self._placeholder_transcript(start, end)
@@ -892,7 +906,7 @@ if __name__ == "__main__":
         "--output-dir", default="output",
         help="Directory to save screenshots and summary")
     parser.add_argument(
-        "--threshold", type=float, default=30.0,
+        "--threshold", type=float, default=45.0,
         help="Threshold for scene detection")
     parser.add_argument(
         "--downscale", type=int, default=64,
@@ -902,7 +916,7 @@ if __name__ == "__main__":
         help="Use Whisper for transcription (if available)")
     parser.add_argument(
         "--model",
-        default="claude-3-7-sonnet-20240307",
+        default="claude-3-7-sonnet-20250219",
         help="Claude model to use")
     parser.add_argument(
         "--max-tokens", type=int, default=1000,

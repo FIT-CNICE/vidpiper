@@ -40,7 +40,7 @@ def test_scene_processor(test_video_path, test_output_dir):
         ]
 
     # Process only the first 3 scenes to save time
-    scenes_to_process = scenes[:3] if len(scenes) > 3 else scenes
+    scenes_to_process = scenes[:30] if len(scenes) > 30 else scenes
     print(f"Processing {len(scenes_to_process)} scenes")
 
     # Create and run SceneProcessor
