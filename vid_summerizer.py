@@ -342,7 +342,7 @@ class SceneProcessor(PipelineStage):
     """
 
     def __init__(self, video_path: str, output_dir: str,
-                 use_whisper: bool = True, whisper_model: str = "base"):
+                 use_whisper: bool = True, whisper_model: str = "small"):
         self.video_path = video_path
         self.output_dir = output_dir
         self.use_whisper = use_whisper
@@ -400,13 +400,13 @@ class SceneProcessor(PipelineStage):
                 print(f"Found GPU with {vram_gb:.2f} GB VRAM")
 
                 # Select model based on available VRAM
-                if vram_gb > 10:
+                if vram_gb > 5:
                     self.whisper_model = "medium"
                     print("Using medium Whisper model")
-                elif vram_gb > 5:
+                elif vram_gb > 2:
                     self.whisper_model = "small"
                     print("Using small Whisper model")
-                elif vram_gb > 2:
+                elif vram_gb > 1:
                     self.whisper_model = "base"
                     print("Using base Whisper model")
                 else:
