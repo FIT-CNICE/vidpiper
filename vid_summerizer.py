@@ -54,8 +54,8 @@ class SceneDetector(PipelineStage):
     or if detected scenes are too large (>5MB), the video will be divided
     into appropriate segments automatically.
 
-    Supports skipping portions at the beginning and end of videos that might contain
-    irrelevant content (intros, credits, etc.).
+    Supports skipping portions at the beginning and end of videos that
+    might contain irrelevant content (intros, credits, etc.).
     """
 
     def __init__(self, threshold: float = 30.0, downscale_factor: int = 64,
@@ -388,7 +388,9 @@ class SceneProcessor(PipelineStage):
         return scenes
 
     def _check_whisper_availability_and_load_model(self):
-        """Check if Whisper is available, select the appropriate model, and load it."""
+        """
+        Check if Whisper is available, select the appropriate model,
+        and load it."""
         try:
             import whisper
             import torch
@@ -416,15 +418,29 @@ class SceneProcessor(PipelineStage):
                 print("No GPU detected, using tiny Whisper model on CPU")
                 self.whisper_model = "tiny"
 
-            # Load the model once
-            print(f"Loading {self.whisper_model} Whisper model...")
+            # Load the model once to use for language detection
+            print(
+                f"Loading initial {self.whisper_model} Whisper model for language detection...")
             self.whisper_model_instance = whisper.load_model(
                 self.whisper_model, device="cuda"
                 if torch.cuda.is_available() else "cpu")
-            print(f"Successfully loaded {self.whisper_model} Whisper model")
 
-            # Detect language from the first few seconds of the video
+            # Detect language from the middle of the video
             self._detect_language()
+
+            # If English is detected, reload with .en model for better accuracy
+            if self.detected_language == "en":
+                model_name = f"{self.whisper_model}.en"
+                print(f"English detected, switching to {model_name} model")
+
+                # Reload the model with .en suffix
+                self.whisper_model_instance = whisper.load_model(
+                    model_name, device="cuda"
+                    if torch.cuda.is_available() else "cpu")
+                print(f"Successfully loaded {model_name} Whisper model")
+            else:
+                print(
+                    f"Using {self.whisper_model} Whisper model for detected language: {self.detected_language or 'unknown'}")
 
         except ImportError:
             print("Whisper not installed. Will use placeholder transcripts.")
@@ -434,16 +450,34 @@ class SceneProcessor(PipelineStage):
             self.use_whisper = False
 
     def _detect_language(self):
-        """Detect language from a sample audio clip at the beginning of the video."""
+        """Detect language from a sample audio clip at the middle of the video."""
         try:
             import whisper
 
-            # Extract a small audio clip from the beginning of the video for
-            # language detection
-            sample_audio_path = self._extract_audio_clip(
-                0, 10)  # First 10 seconds
+            # Get video duration using ffprobe
+            cmd = [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                self.video_path
+            ]
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True)
+            video_duration = float(result.stdout.strip())
 
-            print("Detecting language...")
+            # Extract a small audio clip from the middle of the video for
+            # language detection
+            middle_time = video_duration / 2
+            sample_audio_path = self._extract_audio_clip(
+                max(0, middle_time - 5),
+                min(video_duration, middle_time + 5))  # 10 second clip centered at the middle
+
+            print(
+                f"Detecting language from middle of video (around {middle_time:.2f}s)...")
             audio = whisper.load_audio(sample_audio_path)
             audio = whisper.pad_or_trim(audio)
             mel = whisper.log_mel_spectrogram(audio).to(
@@ -619,6 +653,7 @@ class AnthropicSummaryGenerator(PipelineStage):
             "You are a technical content summarizer specializing in creating accessible, "
             "accurate summaries of technical presentations and demos for general audiences. "
             "Use BOTH THE VISUAL CONTENT AND TRANSCRIPT to create comprehensive summaries. "
+            "Transcript CONTAINS typo of technical jargons"
             "For any technical terms or concepts, provide intuitive explanations that are "
             "accessible to non-experts while maintaining technical accuracy. "
             "Identify key technical concepts, data points, and main arguments from both the visuals "
@@ -775,7 +810,11 @@ class AnthropicSummaryGenerator(PipelineStage):
             )
 
             # Extract the response text
-            generated_text = "##" + message.content[0].text
+            generated_text = message.content[0].text
+
+            generated_text = generated_text.replace("\n### ", "\n#### ")
+            generated_text = generated_text.replace("\n## ", "\n### ")
+            generated_text = generated_text.replace("\n# ", "\n## ")
 
             print(f"Generated summary for scene {scene_id}")
             return generated_text
@@ -838,10 +877,10 @@ if __name__ == "__main__":
         "--output-dir", default="output",
         help="Directory to save screenshots and summary")
     parser.add_argument(
-        "--threshold", type=float, default=45.0,
+        "--threshold", type=float, default=35.0,
         help="Threshold for scene detection")
     parser.add_argument(
-        "--downscale", type=int, default=128,
+        "--downscale", type=int, default=64,
         help="Downscale factor for scene detection")
     parser.add_argument(
         "--use-whisper", action="store_true",
@@ -861,9 +900,9 @@ if __name__ == "__main__":
         help="Maximum size of scenes in MB (default: 20.0)")
     parser.add_argument(
         "--skip-start", type=float, default=60.0,
-        help="Number of seconds to skip at the beginning of the video (default: 0.0)")
+        help="Number of seconds to skip at the beginning of the video (default: 60.0)")
     parser.add_argument(
-        "--skip-end", type=float, default=10.0,
+        "--skip-end", type=float, default=0.0,
         help="Number of seconds to skip at the end of the video (default: 0.0)")
 
     args = parser.parse_args()
