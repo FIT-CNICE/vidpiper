@@ -1,0 +1,6 @@
+outs:
+- md5: a8ae8d70c3bd99dc166a6a06896ada26.dir
+  size: 12721341036
+  nfiles: 27
+  hash: md5
+  path: vid

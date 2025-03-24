@@ -1,5 +1,8 @@
 vid/
+sum_outputs/
 *_output/
 tests/output/
 __pycache__/
 .ropeproject/
+/vid
+/sum_outputs

@@ -1,0 +1,6 @@
+outs:
+- md5: ac50ac9c68c543125b802ad1d6cfe73a.dir
+  size: 15455868
+  nfiles: 94
+  hash: md5
+  path: sum_outputs
