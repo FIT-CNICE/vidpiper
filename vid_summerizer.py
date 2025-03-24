@@ -186,9 +186,8 @@ class SceneDetector(PipelineStage):
         if len(scenes) > self.max_scene:
             print(
                 f"Still detected {len(scenes)} scenes after threshold adjustment. "
-                f"Selecting {self.max_scene} scenes based on duration.")
+                f"Selecting all scenes based on duration.")
             scenes.sort(key=lambda x: x.end - x.start, reverse=True)
-            scenes = scenes[:self.max_scene]
             # Re-number scene IDs sequentially for consistency
             for i, scene in enumerate(scenes):
                 scene.scene_id = i + 1
