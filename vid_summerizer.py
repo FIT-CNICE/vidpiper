@@ -61,8 +61,10 @@ class SceneDetector(PipelineStage):
     def __init__(self, threshold: float = 30.0, downscale_factor: int = 64,
                  min_scene_len: int = 15, timeout_seconds: int = 180,
                  max_size_mb: float = 20.0, skip_start: float = 0.0,
-                 skip_end: float = 0.0):
+                 skip_end: float = 0.0, max_scene: int = None):
         self.threshold = threshold
+        # Store initial threshold for adaptive adjustment
+        self.initial_threshold = threshold
         self.downscale_factor = downscale_factor
         self.min_scene_len = min_scene_len  # Minimum scene length in frames
         # Timeout for scene detection (default 3 min)
@@ -73,6 +75,8 @@ class SceneDetector(PipelineStage):
         self.skip_start = skip_start
         # Number of seconds to skip at the end of the video
         self.skip_end = skip_end
+        # Maximum number of scenes to detect
+        self.max_scene = max_scene
 
     def run(self, input_data: Dict) -> List[Scene]:
         video_path = input_data.get("video_path")
@@ -86,6 +90,12 @@ class SceneDetector(PipelineStage):
         # Get video duration using ffprobe
         video_duration = self._get_video_duration(video_path)
         print(f"Video duration: {video_duration:.2f} seconds")
+
+        # Set max_scene based on video duration if not provided
+        if self.max_scene is None:
+            self.max_scene = max(1, int(video_duration / 120))
+            print(
+                f"Setting max_scene to {self.max_scene} based on video duration (assuming 120s per scene)")
 
         # Apply skip parameters
         effective_start = self.skip_start
@@ -101,38 +111,69 @@ class SceneDetector(PipelineStage):
             f"Processing video from {effective_start:.2f}s to {effective_end:.2f}s " +
             f"(skipping first {self.skip_start:.2f}s and last {self.skip_end:.2f}s)")
 
-        # Attempt scene detection with timeout
+        # Use adaptive threshold to control number of scenes
+        max_attempts = 5  # Limit number of retry attempts
+        current_attempt = 0
         scenes = []
-        detection_complete = False
-        detection_thread = None
 
-        def detect_scenes_thread():
-            nonlocal scenes, detection_complete
-            try:
-                scenes = self._detect_scenes(video_path)
-                detection_complete = True
-            except Exception as e:
-                print(f"Scene detection error: {e}")
-                detection_complete = True
+        while current_attempt < max_attempts:
+            # Attempt scene detection with timeout
+            scenes = []
+            detection_complete = False
 
-        # Start detection in a separate thread
-        detection_thread = threading.Thread(target=detect_scenes_thread)
-        detection_thread.daemon = True
-        detection_thread.start()
+            def detect_scenes_thread():
+                nonlocal scenes, detection_complete
+                try:
+                    scenes = self._detect_scenes(video_path)
+                    detection_complete = True
+                except Exception as e:
+                    print(f"Scene detection error: {e}")
+                    detection_complete = True
 
-        # Wait for detection to complete or timeout
-        start_time = time.time()
-        while not detection_complete and (
-                time.time() - start_time) < self.timeout_seconds:
-            time.sleep(1)
+            # Start detection in a separate thread
+            detection_thread = threading.Thread(target=detect_scenes_thread)
+            detection_thread.daemon = True
+            detection_thread.start()
 
-        if not detection_complete:
+            # Wait for detection to complete or timeout
+            start_time = time.time()
+            while not detection_complete and (
+                    time.time() - start_time) < self.timeout_seconds:
+                time.sleep(1)
+
+            if not detection_complete:
+                print(
+                    f"Scene detection timed out after {self.timeout_seconds} seconds")
+                scenes = []  # Will trigger fallback to manual segmentation
+                break  # Exit the retry loop
+
+            scene_count = len(scenes)
             print(
-                f"Scene detection timed out after {self.timeout_seconds} seconds")
-            scenes = []  # Will trigger fallback to manual segmentation
-            # Don't stop the thread, just continue (it will be a daemon thread)
+                f"Detected {scene_count} scenes with threshold {self.threshold:.2f}")
 
-        # If no scenes detected or timeout occurred, divide video into equal
+            # Check if number of scenes is acceptable
+            if scene_count <= self.max_scene or scene_count == 0:
+                # Either we have fewer scenes than max_scene, or no scenes
+                # detected
+                break
+
+            # Too many scenes detected, increase threshold for next attempt
+            current_attempt += 1
+            if current_attempt < max_attempts:
+                # Calculate new threshold based on ratio of detected scenes to
+                # max_scene
+                ratio = scene_count / self.max_scene
+                # Increase threshold proportionally to the ratio
+                self.threshold = self.initial_threshold * \
+                    (1 + (ratio - 1) * 0.8)
+                print(
+                    f"Too many scenes detected ({scene_count} > {self.max_scene}). "
+                    f"Adjusting threshold to {self.threshold:.2f} (attempt {current_attempt}/{max_attempts})")
+            else:
+                print(
+                    f"Reached maximum retry attempts. Using best result with {scene_count} scenes.")
+
+        # If no scenes detected after all attempts, divide video into equal
         # segments
         if not scenes:
             print(
@@ -140,6 +181,17 @@ class SceneDetector(PipelineStage):
                 "Dividing video into equal segments...")
             scenes = self._divide_video_into_segments(
                 video_path, video_duration)
+
+        # If we still have too many scenes, select max_scene scenes by duration
+        if len(scenes) > self.max_scene:
+            print(
+                f"Still detected {len(scenes)} scenes after threshold adjustment. "
+                f"Selecting {self.max_scene} scenes based on duration.")
+            scenes.sort(key=lambda x: x.end - x.start, reverse=True)
+            scenes = scenes[:self.max_scene]
+            # Re-number scene IDs sequentially for consistency
+            for i, scene in enumerate(scenes):
+                scene.scene_id = i + 1
 
         # Check if any scene is too large and subdivide if needed
         scenes = self._ensure_max_scene_size(video_path, scenes)
@@ -195,8 +247,6 @@ class SceneDetector(PipelineStage):
                         end=end_time
                     ))
 
-            print(
-                f"Detected {len(scenes)} scenes within specified time range.")
             return scenes
         finally:
             video_manager.release()
@@ -933,6 +983,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip-end", type=float, default=0.0,
         help="Number of seconds to skip at the end of the video (default: 0.0)")
+    parser.add_argument(
+        "--max-scene", type=int, default=None,
+        help="Maximum number of scenes to detect. If None, uses video length / 120 seconds per scene.")
 
     args = parser.parse_args()
 
@@ -954,7 +1007,8 @@ if __name__ == "__main__":
         timeout_seconds=args.timeout,
         max_size_mb=args.max_size,
         skip_start=args.skip_start,
-        skip_end=args.skip_end)
+        skip_end=args.skip_end,
+        max_scene=args.max_scene)
     scene_processor = SceneProcessor(
         video_path=args.video_path,
         output_dir=output_dir,
