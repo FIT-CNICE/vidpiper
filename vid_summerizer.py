@@ -736,93 +736,122 @@ class AnthropicSummaryGenerator(PipelineStage):
             total_scenes: int) -> str:
         """
         Generate a summary for a single scene using Claude 3.7's
-        multimodal capabilities.
+        multimodal capabilities with retry mechanism for handling API errors.
         """
-        try:
-            # Encode the screenshot as base64
-            base64_image = self._encode_image(screenshot_path)
+        # Encode the screenshot as base64
+        base64_image = self._encode_image(screenshot_path)
 
-            # Create the user prompt with different strategies depending on
-            # position
-            if scene_index == 0:
-                # First scene - establish the topic
-                context_directive = (
-                    "As this is the first scene, establish the main topic and context of the presentation."
-                )
-            elif scene_index == total_scenes - 1:
-                # Last scene - wrap up and connect to previous content
-                context_directive = (
-                    f"This is the final scene. Connect it with previous content and provide closure on the topic. "
-                    f"Previous summary context: \"{self.previous_summary_context}...\"")
-            else:
-                # Middle scene - maintain continuity
-                context_directive = (
-                    f"Connect this scene with the previous content for a cohesive summary. "
-                    f"Previous summary context: \"{self.previous_summary_context}...\"")
-
-            # Optimize transcript inclusion based on language
-            if "你好" in transcript or "我们" in transcript or "这是" in transcript:
-                # For Chinese content, use a shorter portion to reduce tokens
-                transcript_preview = transcript
-                transcript_note = "Note: This appears to be primarily in Chinese. Focus mainly on what you can see in the image."
-            else:
-                transcript_preview = transcript
-                transcript_note = ""
-
-            # Create the user prompt for balanced analysis suitable for general
-            # audience
-            user_prompt = (
-                f"This is frame {scene_id} from a technical presentation video (timestamp: {start_time:.2f}s to {end_time:.2f}s).\n\n"
-                f"Transcript preview: {transcript_preview}\n"
-                f"{transcript_note}\n\n"
-                f"{context_directive}\n\n"
-                "IMPORTANT: USE BOTH THE VISUAL CONTENT AND TRANSCRIPT to create a comprehensive summary.\n\n"
-                "Please provide a detailed summary that includes:\n"
-                "1. Key technical concepts from both the slide/demo and speaker's explanation\n"
-                "2. Any relevant data, diagrams, or metrics with context from the transcript\n"
-                "3. The main point of this segment, explaining technical terms in an intuitive yet rigorous way\n\n"
-                "Make your summary accessible to a general audience by explaining technical terms using everyday language, analogies, or simplified examples while maintaining technical accuracy.")
-
-            # Create message with the Anthropic client
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=min(self.max_tokens, 3000),
-                system=self.system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": base64_image
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": user_prompt
-                            }
-                        ]
-                    }
-                ]
+        # Create the user prompt with different strategies depending on
+        # position
+        if scene_index == 0:
+            # First scene - establish the topic
+            context_directive = (
+                "As this is the first scene, " +
+                "establish the main topic and context of the presentation." +
+                "if the image content does not look like part of a demo, " +
+                "presentation, or panel discussion. Tell me using EXACTLY " +
+                "the following words: \"NO USEFUL CONTENT FOUND!\""
             )
+        elif scene_index == total_scenes - 1:
+            # Last scene - wrap up and connect to previous content
+            context_directive = (
+                "This is the final scene. Connect it with previous " +
+                "content and provide closure on the topic. " +
+                "Previous summary context:"
+                f" \"{self.previous_summary_context}...\"")
+        else:
+            # Middle scene - maintain continuity
+            context_directive = (
+                "Connect this scene with the previous content for " +
+                "a cohesive summary. Previous summary context:"
+                f" \"{self.previous_summary_context}...\"")
 
-            # Extract the response text
-            generated_text = message.content[0].text
+        # Optimize transcript inclusion based on language
+        if "你好" in transcript or "我们" in transcript or "这是" in transcript:
+            # For Chinese content, use a shorter portion to reduce tokens
+            transcript_preview = transcript
+            transcript_note = "Note: This appears to be primarily Chinese." + \
+                " Transcript might contain typos on technical jargons."
+        else:
+            transcript_preview = transcript
+            transcript_note = ""
 
-            generated_text = generated_text.replace("\n### ", "\n#### ")
-            generated_text = generated_text.replace("\n## ", "\n### ")
-            generated_text = generated_text.replace("\n# ", "\n## ")
+        # Create the user prompt for balanced analysis suitable for general
+        # audience
+        user_prompt = (
+            f"This is frame {scene_id} from a technical presentation video (timestamp: {start_time:.2f}s to {end_time:.2f}s).\n\n"
+            f"Transcript preview: {transcript_preview}\n"
+            f"{transcript_note}\n\n"
+            f"{context_directive}\n\n"
+            "IMPORTANT: USE BOTH THE VISUAL CONTENT AND TRANSCRIPT to create a comprehensive summary.\n\n"
+            "Please provide a detailed summary that includes:\n"
+            "1. Key technical concepts from both the slide/demo and speaker's explanation\n"
+            "2. Any relevant data, diagrams, or metrics with context from the transcript\n"
+            "3. The main point of this segment, explaining technical terms in an intuitive yet rigorous way\n\n"
+            "Make your summary accessible to a general audience by explaining technical terms using everyday language, analogies, or simplified examples while maintaining technical accuracy.")
 
-            print(f"Generated summary for scene {scene_id}")
-            return generated_text
+        # Retry parameters
+        max_retries = 3
+        retry_delay = 2  # Initial delay in seconds
+        retry_count = 0
 
-        except Exception as e:
-            error_msg = f"Error generating summary for scene {scene_id}: {str(e)}"
-            print(error_msg)
-            return f"*{error_msg}*"
+        while retry_count < max_retries:
+            try:
+                # Create message with the Anthropic client
+                message = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=min(self.max_tokens, 3000),
+                    system=self.system_prompt,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/jpeg",
+                                        "data": base64_image
+                                    }
+                                },
+                                {
+                                    "type": "text",
+                                    "text": user_prompt
+                                }
+                            ]
+                        }
+                    ]
+                )
+
+                # Extract the response text
+                generated_text = message.content[0].text
+
+                generated_text = generated_text.replace("\n## ", "\n### ")
+                generated_text = generated_text.replace("\n# ", "\n## ")
+
+                print(f"Generated summary for scene {scene_id}")
+                return generated_text
+
+            except Exception as e:
+                retry_count += 1
+                error_msg = "Error generating summary for scene " + \
+                    f"{scene_id} (attempt {retry_count}/{max_retries}):" + \
+                    f"{str(e)}"
+                print(error_msg)
+
+                if retry_count < max_retries:
+                    # Exponential backoff with jitter
+                    import random
+                    # Add random jitter between 0-0.5 seconds
+                    jitter = random.uniform(0, 0.5)
+                    sleep_time = (
+                        retry_delay * (2 ** (retry_count - 1))) + jitter
+                    print(f"Retrying in {sleep_time:.2f} seconds...")
+                    time.sleep(sleep_time)
+                else:
+                    # All retries failed, return error message
+                    return "*Error generating summary for scene " + \
+                        f"{scene_id} after {max_retries} attempts: {str(e)}*"
 
 
 # ---------------------------------------------------------
