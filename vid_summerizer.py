@@ -93,7 +93,7 @@ class SceneDetector(PipelineStage):
 
         # Set max_scene based on video duration if not provided
         if self.max_scene is None:
-            self.max_scene = max(1, int(video_duration / 120))
+            self.max_scene = max(1, int(video_duration / 100))
             print(
                 f"Setting max_scene to {self.max_scene} based on video duration (assuming 120s per scene)")
 
@@ -521,9 +521,9 @@ class SceneProcessor(PipelineStage):
             # language detection
             middle_time = video_duration / 2
             sample_audio_path = self._extract_audio_clip(
-                max(0, middle_time - 15),
+                max(0, middle_time - 60),
                 # 30 second clip centered at the middle
-                min(video_duration, middle_time + 15))
+                min(video_duration, middle_time + 60))
 
             print(
                 f"Detecting language from middle of video (around {middle_time:.2f}s)...")
