@@ -112,7 +112,7 @@ class SceneDetector(PipelineStage):
             f"(skipping first {self.skip_start:.2f}s and last {self.skip_end:.2f}s)")
 
         # Use adaptive threshold to control number of scenes
-        max_attempts = 5  # Limit number of retry attempts
+        max_attempts = 3  # Limit number of retry attempts
         current_attempt = 0
         scenes = []
 
@@ -164,14 +164,13 @@ class SceneDetector(PipelineStage):
                 # max_scene
                 ratio = scene_count / self.max_scene
                 # Increase threshold proportionally to the ratio
+                self.initial_threshold = self.threshold
                 self.threshold = self.initial_threshold * \
                     (1 + (ratio - 1) * 0.8)
                 print(
-                    f"Too many scenes detected ({scene_count} > {self.max_scene}). "
-                    f"Adjusting threshold to {self.threshold:.2f} (attempt {current_attempt}/{max_attempts})")
-            else:
-                print(
-                    f"Reached maximum retry attempts. Using best result with {scene_count} scenes.")
+                    f"Too many scenes ({scene_count} > {self.max_scene}). "
+                    f"Adjusting threshold to {self.threshold:.2f} "
+                    f"(attempt {current_attempt}/{max_attempts})")
 
         # If no scenes detected after all attempts, divide video into equal
         # segments
@@ -185,8 +184,8 @@ class SceneDetector(PipelineStage):
         # If we still have too many scenes, select max_scene scenes by duration
         if len(scenes) > self.max_scene:
             print(
-                f"Still detected {len(scenes)} scenes after threshold adjustment. "
-                f"Selecting all scenes based on duration.")
+                f"Still detected {len(scenes)} scenes after "
+                "threshold adjustment. Selecting all scenes.")
             scenes.sort(key=lambda x: x.end - x.start, reverse=True)
             # Re-number scene IDs sequentially for consistency
             for i, scene in enumerate(scenes):
@@ -522,8 +521,9 @@ class SceneProcessor(PipelineStage):
             # language detection
             middle_time = video_duration / 2
             sample_audio_path = self._extract_audio_clip(
-                max(0, middle_time - 5),
-                min(video_duration, middle_time + 5))  # 10 second clip centered at the middle
+                max(0, middle_time - 15),
+                # 30 second clip centered at the middle
+                min(video_duration, middle_time + 15))
 
             print(
                 f"Detecting language from middle of video (around {middle_time:.2f}s)...")
