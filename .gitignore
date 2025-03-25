@@ -1,5 +1,6 @@
 vid/
 sum_outputs/
+fmt_outputs/
 *_output/
 tests/output/
 __pycache__/
