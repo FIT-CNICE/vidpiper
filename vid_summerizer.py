@@ -95,7 +95,8 @@ class SceneDetector(PipelineStage):
         if self.max_scene is None:
             self.max_scene = max(1, int(video_duration / 100))
             print(
-                f"Setting max_scene to {self.max_scene} based on video duration (assuming 120s per scene)")
+                f"Setting max_scene to {self.max_scene} based on "
+                "video duration(assuming 100s per scene)")
 
         # Apply skip parameters
         effective_start = self.skip_start
@@ -104,12 +105,15 @@ class SceneDetector(PipelineStage):
         # Validate skip parameters
         if effective_start >= effective_end:
             raise ValueError(
-                f"Invalid skip parameters: start ({self.skip_start}s) and end ({self.skip_end}s) " +
+                f"Invalid skip parameters: start ({self.skip_start}s) "
+                f"and end ({self.skip_end}s) "
                 f"would leave no content in the {video_duration:.2f}s video")
 
         print(
-            f"Processing video from {effective_start:.2f}s to {effective_end:.2f}s " +
-            f"(skipping first {self.skip_start:.2f}s and last {self.skip_end:.2f}s)")
+            f"Processing video from {effective_start:.2f}s "
+            f"to {effective_end:.2f}s "
+            f"(skipping first {self.skip_start:.2f}s and "
+            f"last {self.skip_end:.2f}s)")
 
         # Use adaptive threshold to control number of scenes
         max_attempts = 3  # Limit number of retry attempts
@@ -883,19 +887,29 @@ class AnthropicSummaryGenerator(PipelineStage):
 
             except Exception as e:
                 retry_count += 1
+                error_str = str(e)
                 error_msg = "Error generating summary for scene " + \
                     f"{scene_id} (attempt {retry_count}/{max_retries}):" + \
-                    f"{str(e)}"
+                    f"{error_str}"
                 print(error_msg)
+
+                # Check for overload or rate limit errors
+                is_overload = "overloaded" in error_str.lower(
+                ) or "rate limit" in error_str.lower() or "429" in error_str
 
                 if retry_count < max_retries:
                     # Exponential backoff with jitter
                     import random
                     # Add random jitter between 0-0.5 seconds
                     jitter = random.uniform(0, 0.5)
+                    # Use longer backoff for overload errors
+                    base_delay = retry_delay * 5 if is_overload else retry_delay
                     sleep_time = (
-                        retry_delay * (2 ** (retry_count - 1))) + jitter
-                    print(f"Retrying in {sleep_time:.2f} seconds...")
+                        base_delay * (2 ** (retry_count - 1))) + jitter
+                    print(
+                        f"Retrying in {sleep_time:.2f} seconds..." +
+                        (" (Rate limit/overload detected)"
+                         if is_overload else ""))
                     time.sleep(sleep_time)
                 else:
                     # All retries failed, return error message
