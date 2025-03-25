@@ -4,5 +4,6 @@ sum_outputs/
 tests/output/
 __pycache__/
 .ropeproject/
+.pytest_cache/
 /vid
 /sum_outputs
