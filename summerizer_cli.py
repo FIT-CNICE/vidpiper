@@ -17,7 +17,8 @@ from video_summarizer.core import Pipeline, PipelineResult
 from video_summarizer.stages import (
     create_scene_detector,
     create_scene_processor,
-    create_summary_generator
+    create_summary_generator,
+    create_summary_formatter
 )
 
 
@@ -33,7 +34,7 @@ def parse_args():
         help="Directory to save output (defaults to <video_name>_output)")
     parser.add_argument(
         "--run-mode", default="full",
-        choices=["full", "detect", "process", "summarize"],
+        choices=["full", "detect", "process", "summarize", "format"],
         help="Mode to run: full pipeline or individual stages (default: full)")
     parser.add_argument(
         "--checkpoint-dir", default=None,
@@ -88,6 +89,15 @@ def parse_args():
         "--llm-provider", default="gemini",
         choices=["anthropic", "openai", "gemini"],
         help="Preferred LLM provider (default: gemini)")
+        
+    # Summary formatting options
+    format_group = parser.add_argument_group('Summary Formatting Options')
+    format_group.add_argument(
+        "--format-dir", default=None,
+        help="Directory containing summary files to format (default: same as output-dir)")
+    format_group.add_argument(
+        "--format-single", default=None,
+        help="Path to a single summary file to format")
     
     return parser.parse_args()
 
@@ -140,6 +150,14 @@ def run_full_pipeline(args):
         preferred_provider=args.llm_provider
     ))
     
+    # Add the formatter stage
+    pipeline.add_stage(create_summary_formatter(
+        model=args.model,
+        max_tokens=args.max_tokens,
+        output_dir=output_dir,
+        preferred_provider=args.llm_provider
+    ))
+    
     # Create initial pipeline data
     initial_data = PipelineResult(video_path=args.video_path)
     
@@ -150,6 +168,9 @@ def run_full_pipeline(args):
         
         if result.summary_file:
             print(f"Markdown summary: {result.summary_file}")
+            
+        if result.formatted_file:
+            print(f"Formatted Marp deck: {result.formatted_file}")
             
     except Exception as e:
         print(f"Pipeline failed: {e}")
@@ -313,14 +334,107 @@ def run_summary_generation(args):
         sys.exit(1)
 
 
+def run_summary_formatting(args):
+    """Run only the summary formatting stage."""
+    output_dir = get_output_dir(args)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    if args.checkpoint_dir:
+        os.makedirs(args.checkpoint_dir, exist_ok=True)
+    
+    # Create the pipeline with only the summary formatter
+    pipeline = Pipeline()
+    
+    if args.checkpoint_dir:
+        pipeline.set_checkpoint_dir(args.checkpoint_dir)
+    
+    formatter = create_summary_formatter(
+        model=args.model,
+        max_tokens=args.max_tokens,
+        output_dir=output_dir,
+        preferred_provider=args.llm_provider
+    )
+    
+    pipeline.add_stage(formatter)
+    
+    # Determine what to format
+    if args.format_single and os.path.exists(args.format_single):
+        # Format a single file
+        print(f"Formatting single file: {args.format_single}")
+        initial_data = PipelineResult(
+            video_path=args.video_path,
+            summary_file=args.format_single,
+            output_dir=output_dir
+        )
+    elif args.format_dir and os.path.isdir(args.format_dir):
+        # Format all summary files in a directory
+        print(f"Formatting all summary files in directory: {args.format_dir}")
+        # Initialize with dummy data - the formatter will search the directory
+        initial_data = PipelineResult(
+            video_path=args.format_dir,  # Use directory as video_path for search
+            output_dir=output_dir
+        )
+    elif args.checkpoint_file and os.path.exists(args.checkpoint_file):
+        # Load from specified checkpoint
+        with open(args.checkpoint_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        initial_data = PipelineResult.from_dict(data)
+    else:
+        # Try to find summary file from previous stage
+        summary_pattern = os.path.join(output_dir, "*_sum.md")
+        import glob
+        summary_files = glob.glob(summary_pattern)
+        
+        if not summary_files:
+            print(f"Cannot find summary files in: {output_dir}")
+            print("Please run summary generation first or specify a file/directory to format.")
+            sys.exit(1)
+        
+        # Use the most recent summary file
+        latest_summary = max(summary_files, key=os.path.getmtime)
+        print(f"Using most recent summary file: {latest_summary}")
+        
+        initial_data = PipelineResult(
+            video_path=args.video_path,
+            summary_file=latest_summary,
+            output_dir=output_dir
+        )
+    
+    # Run formatting stage
+    try:
+        result = pipeline.run(initial_data)
+        print(f"Summary formatting complete.")
+        
+        if result.formatted_file:
+            print(f"Formatted Marp deck saved to: {result.formatted_file}")
+        elif "formatted_summaries" in result.metadata:
+            formatted_files = result.metadata["formatted_summaries"]
+            print(f"Formatted {len(formatted_files)} summary files:")
+            for f in formatted_files:
+                print(f"  - {f}")
+        
+    except Exception as e:
+        print(f"Summary formatting failed: {e}")
+        sys.exit(1)
+
+
 def main():
     """Main entry point for the CLI."""
     args = parse_args()
     
-    # Ensure video file exists
-    if not os.path.exists(args.video_path):
-        print(f"Video file not found: {args.video_path}")
-        sys.exit(1)
+    # Check for format mode which might not need a video file
+    if args.run_mode == "format" and (args.format_single or args.format_dir):
+        if args.format_single and not os.path.exists(args.format_single):
+            print(f"Summary file not found: {args.format_single}")
+            sys.exit(1)
+        if args.format_dir and not os.path.isdir(args.format_dir):
+            print(f"Directory not found: {args.format_dir}")
+            sys.exit(1)
+    else:
+        # For other modes, ensure video file exists
+        if not os.path.exists(args.video_path):
+            print(f"Video file not found: {args.video_path}")
+            sys.exit(1)
     
     # Run the appropriate pipeline based on the run mode
     if args.run_mode == "full":
@@ -331,6 +445,8 @@ def main():
         run_scene_processing(args)
     elif args.run_mode == "summarize":
         run_summary_generation(args)
+    elif args.run_mode == "format":
+        run_summary_formatting(args)
     else:
         print(f"Unknown run mode: {args.run_mode}")
         sys.exit(1)

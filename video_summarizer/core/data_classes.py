@@ -41,6 +41,7 @@ class PipelineResult:
     scenes: List[Scene] = None
     output_dir: str = None
     summary_file: str = None
+    formatted_file: str = None
     complete_summary: str = None
     metadata: Dict[str, Any] = None
     
@@ -58,6 +59,7 @@ class PipelineResult:
             "scenes": [scene.to_dict() for scene in self.scenes] if self.scenes else [],
             "output_dir": self.output_dir,
             "summary_file": self.summary_file,
+            "formatted_file": self.formatted_file,
             "complete_summary": self.complete_summary,
             "metadata": self.metadata
         }
@@ -69,6 +71,7 @@ class PipelineResult:
             video_path=data["video_path"],
             output_dir=data.get("output_dir"),
             summary_file=data.get("summary_file"),
+            formatted_file=data.get("formatted_file"),
             complete_summary=data.get("complete_summary"),
             metadata=data.get("metadata", {})
         )
