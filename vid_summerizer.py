@@ -525,9 +525,9 @@ class SceneProcessor(PipelineStage):
             # language detection
             middle_time = video_duration / 2
             sample_audio_path = self._extract_audio_clip(
-                max(0, middle_time - 60),
-                # 30 second clip centered at the middle
-                min(video_duration, middle_time + 60))
+                max(0, middle_time - 300),
+                # 600 second clip centered at the middle
+                min(video_duration, middle_time + 300))
 
             print(
                 f"Detecting language from middle of video (around {middle_time:.2f}s)...")
