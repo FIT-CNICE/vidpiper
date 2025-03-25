@@ -7,7 +7,7 @@ import sys
 import pytest
 from pathlib import Path
 
-# Add the parent directory to the path so tests can import vid_summerizer.py
+# Add the parent directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Define constants for testing
@@ -16,12 +16,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEST_VIDEO_PATH = os.path.join(
     BASE_DIR,
     # "vid/an-ai-team-lead-guide.mp4")
-    "vid/distributed-light-baking-system-powered-by-optix-7.mp4")
+    # "vid/distributed-light-baking-system-powered-by-optix-7.mp4"
+    "vid/step-6.mp4")
 TEST_OUTPUT_DIR = os.path.join(BASE_DIR, "tests/output")
 
 # Create output directories
 os.makedirs(TEST_OUTPUT_DIR, exist_ok=True)
-# os.makedirs(os.path.join(TEST_OUTPUT_DIR, "screenshots"), exist_ok=True)
 os.makedirs(os.path.join(TEST_OUTPUT_DIR, "processor_output"), exist_ok=True)
 os.makedirs(
     os.path.join(
@@ -41,9 +41,8 @@ def test_output_dir():
     """Return the path to the test output directory."""
     return TEST_OUTPUT_DIR
 
+
 # Function to get status of previous test stages (for dependency handling)
-
-
 def get_test_stage_status(stage_name):
     """Check if a previous test stage has completed successfully."""
     if stage_name == "scene_detector":

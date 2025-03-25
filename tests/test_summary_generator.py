@@ -8,7 +8,14 @@ using the multi-provider LLM generator.
 import os
 import json
 import argparse
-from vid_summerizer import LLMSummaryGenerator, Scene
+import sys
+from pathlib import Path
+
+# Add the parent directory to the path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from video_summarizer.core import Scene, PipelineResult
+from video_summarizer.stages import create_summary_generator
 
 
 def test_summary_generator(test_output_dir, provider="anthropic"):
@@ -24,16 +31,22 @@ def test_summary_generator(test_output_dir, provider="anthropic"):
     if os.path.exists(processed_scenes_file):
         print(f"Loading processed scenes from {processed_scenes_file}")
         with open(processed_scenes_file, 'r') as f:
-            scene_dicts = json.load(f)
-
-        # Convert dict to Scene objects
-        scenes = [Scene(
-            scene_id=s["scene_id"],
-            start=s["start"],
-            end=s["end"],
-            screenshot=s["screenshot"],
-            transcript=s["transcript"]
-        ) for s in scene_dicts]
+            scenes_data = json.load(f)
+        
+        # Check if the data is a list (old format) or a dictionary (new format)
+        if isinstance(scenes_data, list):
+            # Convert scenes data to Scene objects
+            scenes = [Scene.from_dict(scene) for scene in scenes_data]
+            # Create a PipelineResult
+            result = PipelineResult(
+                video_path=test_video_path if 'test_video_path' in locals() else "test_video.mp4",
+                scenes=scenes,
+                output_dir=test_output_dir
+            )
+        else:
+            # Convert to PipelineResult
+            result = PipelineResult.from_dict(scenes_data)
+            scenes = result.scenes
     else:
         # Create a basic sample with mock data
         print("Sample processed scenes file not found, using mock data")
@@ -64,10 +77,21 @@ def test_summary_generator(test_output_dir, provider="anthropic"):
                 transcript="This is a sample transcript for testing the summary generator with different LLM providers."
             )
         ]
+        
+        # Create a PipelineResult
+        result = PipelineResult(
+            video_path="test_video.mp4",
+            scenes=scenes,
+            output_dir=test_output_dir
+        )
 
     # Process only the first scene to save on API costs during testing
-    scenes_to_process = scenes[:1]
-    print(f"Processing {len(scenes_to_process)} scenes for summary generation using {provider.upper()}")
+    if len(scenes) > 1:
+        scenes_to_process = scenes[:1]
+        result.scenes = scenes_to_process
+        print(f"Processing only the first scene for summary generation using {provider.upper()}")
+    else:
+        print(f"Processing scene for summary generation using {provider.upper()}")
 
     # Create and run LLMSummaryGenerator with specified provider
     try:
@@ -81,17 +105,25 @@ def test_summary_generator(test_output_dir, provider="anthropic"):
         else:
             model = "claude-3-7-sonnet-20250219"  # Default
             
-        generator = LLMSummaryGenerator(
+        generator = create_summary_generator(
             model=model,
             max_tokens=500,
             output_dir=test_output_dir,
             preferred_provider=provider
         )
         
-        print(f"Active provider: {generator.active_provider}")
-        print(f"Available providers: {', '.join(generator.available_generators)}")
+        # Run the generator
+        summary_result = generator.run(result)
         
-        summary = generator.run(scenes_to_process)
+        # Get the active provider and available providers
+        active_provider = summary_result.metadata.get("summary_generation", {}).get("llm_provider")
+        available_providers = summary_result.metadata.get("summary_generation", {}).get("available_providers", [])
+        
+        print(f"Active provider: {active_provider}")
+        print(f"Available providers: {', '.join(available_providers)}")
+        
+        # Get the summary
+        summary = summary_result.complete_summary
 
         # Save the summary to a file
         with open(test_summary_file, 'w') as f:
@@ -108,7 +140,8 @@ def test_summary_generator(test_output_dir, provider="anthropic"):
             print("...")
         print("-----------------------------------")
 
-        return summary
+        assert summary is not None
+        return None
 
     except Exception as e:
         print(f"Error testing summary generator: {str(e)}")
@@ -116,14 +149,7 @@ def test_summary_generator(test_output_dir, provider="anthropic"):
 
 
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-
-    # Get the project root directory
-    root_dir = Path(__file__).parent.parent
-
     # Import from conftest.py
-    sys.path.insert(0, str(root_dir))
     from tests.conftest import TEST_OUTPUT_DIR
     
     # Parse arguments

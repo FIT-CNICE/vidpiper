@@ -35,11 +35,19 @@ def run_all_tests(run_unit_tests=False, llm_provider="anthropic"):
             print("RUNNING UNIT TESTS")
             print("=" * 50)
             import pytest
-            # Run test_llm_generators.py with pytest
-            pytest_result = pytest.main(["-xvs", os.path.join(Path(__file__).parent, "test_llm_generators.py")])
-            if pytest_result != 0:
-                print("Unit tests failed!")
-                return 1
+            
+            # Run unit tests with pytest
+            unit_test_files = [
+                os.path.join(Path(__file__).parent, "test_llm_generators.py"),
+                os.path.join(Path(__file__).parent, "test_pipeline.py")
+            ]
+            
+            for test_file in unit_test_files:
+                print(f"\nRunning tests in {os.path.basename(test_file)}")
+                pytest_result = pytest.main(["-xvs", test_file])
+                if pytest_result != 0:
+                    print(f"Unit tests in {os.path.basename(test_file)} failed!")
+                    return 1
             
         # Test 1: Scene Detection
         print("\n\n" + "=" * 50)
@@ -75,7 +83,7 @@ if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Run tests for video summarization pipeline")
     parser.add_argument("--unit-tests", action="store_true", 
-                        help="Run unit tests for LLM generators")
+                        help="Run unit tests for LLM generators and Pipeline architecture")
     parser.add_argument("--provider", choices=["anthropic", "openai", "gemini"], 
                         default="anthropic", help="LLM provider to test")
     

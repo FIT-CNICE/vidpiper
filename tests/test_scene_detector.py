@@ -6,7 +6,14 @@ This script tests scene detection on a sample video from the vid/ folder.
 
 import os
 import json
-from vid_summerizer import SceneDetector
+import sys
+from pathlib import Path
+
+# Add the parent directory to the path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from video_summarizer.core import PipelineResult
+from video_summarizer.stages import create_scene_detector
 
 
 def test_scene_detector(test_video_path, test_output_dir):
@@ -25,19 +32,21 @@ def test_scene_detector(test_video_path, test_output_dir):
     for threshold in thresholds:
         print(f"\nTesting SceneDetector with threshold={threshold}")
 
-        # Create and run SceneDetector with higher downscale factor for faster
-        # processing
-        detector = SceneDetector(
+        # Create and run SceneDetector with higher downscale factor for faster processing
+        detector = create_scene_detector(
             threshold=threshold,
-            # Much higher downscale factor for testing - uses less memory and
-            # runs faster
+            # Much higher downscale factor for testing - uses less memory and runs faster
             downscale_factor=128,
-            skip_start=60.0,
-            skip_end=10.0
+            skip_start=0.0,  # Video is short, don't skip anything
+            skip_end=0.0     # Video is short, don't skip anything
         )
 
-        # Using absolute path for video_path
-        scenes = detector.run({"video_path": os.path.abspath(test_video_path)})
+        # Create initial pipeline data
+        initial_data = PipelineResult(video_path=os.path.abspath(test_video_path))
+        
+        # Run the detector
+        result = detector.run(initial_data)
+        scenes = result.scenes
 
         # Print results
         print(f"Detected {len(scenes)} scenes:")
@@ -48,7 +57,7 @@ def test_scene_detector(test_video_path, test_output_dir):
         if len(scenes) > 5:
             print(f"  ... and {len(scenes) - 5} more scenes")
 
-        # Convert scenes to dicts for JSON serialization
+        # Convert scenes to dicts for JSON serialization (deprecated approach, now using PipelineResult.to_dict())
         scene_dicts = []
         for scene in scenes:
             scene_dicts.append({
@@ -66,16 +75,18 @@ def test_scene_detector(test_video_path, test_output_dir):
 
         print(f"Results saved to {result_file}")
 
+        # Also save using the new PipelineResult serialization
+        new_result_file = os.path.join(
+            test_output_dir,
+            f"scenes_test_pipeline_result.json")
+        with open(new_result_file, 'w') as f:
+            json.dump(result.to_dict(), f, indent=2)
+            
+        print(f"Full pipeline result saved to {new_result_file}")
+
 
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-
-    # Get the project root directory
-    root_dir = Path(__file__).parent.parent
-
     # Import from conftest.py
-    sys.path.insert(0, str(root_dir))
     from tests.conftest import TEST_VIDEO_PATH, TEST_OUTPUT_DIR
 
     # Create output dir

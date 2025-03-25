@@ -9,7 +9,7 @@ import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Type
 from dataclasses import dataclass
 
 # ---------------------------------------------------------
@@ -28,11 +28,13 @@ class Scene:
 
 
 # ---------------------------------------------------------
-# Stage 1: Scene Detection using PySceneDetect
+# Pipeline Architecture
 # ---------------------------------------------------------
 
 
 class PipelineStage(ABC):
+    """Base class for all pipeline stages."""
+    
     @abstractmethod
     def run(self, input_data: Any) -> Any:
         """Run this pipeline stage with the provided input data."""
@@ -41,6 +43,67 @@ class PipelineStage(ABC):
     def cleanup(self) -> None:
         """Clean up any resources used by this stage."""
         pass
+    
+    @property
+    def name(self) -> str:
+        """Get the name of this stage."""
+        return self.__class__.__name__
+
+
+class Pipeline:
+    """
+    A generic pipeline that can be configured with different stages.
+    """
+
+    def __init__(self):
+        self.stages: List[PipelineStage] = []
+        
+    def add_stage(self, stage: PipelineStage) -> 'Pipeline':
+        """Add a stage to the pipeline."""
+        self.stages.append(stage)
+        return self
+        
+    def insert_stage(self, index: int, stage: PipelineStage) -> 'Pipeline':
+        """Insert a stage at a specific position in the pipeline."""
+        self.stages.insert(index, stage)
+        return self
+        
+    def replace_stage(self, index: int, stage: PipelineStage) -> 'Pipeline':
+        """Replace a stage at a specific position in the pipeline."""
+        self.stages[index] = stage
+        return self
+        
+    def remove_stage(self, index: int) -> 'Pipeline':
+        """Remove a stage at a specific position from the pipeline."""
+        self.stages.pop(index)
+        return self
+        
+    def run(self, initial_input: Any = None) -> Any:
+        """Run the pipeline with the given initial input."""
+        data = initial_input
+        try:
+            for i, stage in enumerate(self.stages):
+                print(f"Running stage {i+1}/{len(self.stages)}: {stage.name}")
+                data = stage.run(data)
+            return data
+        except Exception as e:
+            print(f"Pipeline failed: {str(e)}")
+            raise
+        finally:
+            self.cleanup()
+
+    def cleanup(self) -> None:
+        """Clean up all stages."""
+        for stage in self.stages:
+            try:
+                stage.cleanup()
+            except Exception as e:
+                print(f"Error during cleanup of {stage.name}: {str(e)}")
+
+
+# ---------------------------------------------------------
+# Stage 1: Scene Detection using PySceneDetect
+# ---------------------------------------------------------
 
 
 class SceneDetector(PipelineStage):
@@ -199,7 +262,11 @@ class SceneDetector(PipelineStage):
         scenes = self._ensure_max_scene_size(video_path, scenes)
 
         print(f"Final scene count: {len(scenes)}")
-        return scenes
+        
+        # Pass both scenes and original input data to next stage
+        result = input_data.copy()
+        result["scenes"] = scenes
+        return result
 
     def _detect_scenes(self, video_path: str) -> List[Scene]:
         """Core scene detection logic using PySceneDetect."""
@@ -382,6 +449,7 @@ class SceneDetector(PipelineStage):
 
         return result_scenes
 
+
 # ---------------------------------------------------------
 # Stage 2: Screenshot and Transcript Extraction
 # ---------------------------------------------------------
@@ -393,9 +461,8 @@ class SceneProcessor(PipelineStage):
     at the midpoint and generates a transcript using Whisper when available.
     """
 
-    def __init__(self, video_path: str, output_dir: str,
+    def __init__(self, output_dir: str,
                  use_whisper: bool = True, whisper_model: str = "small"):
-        self.video_path = video_path
         self.output_dir = output_dir
         self.use_whisper = use_whisper
         self.whisper_model = whisper_model
@@ -403,19 +470,27 @@ class SceneProcessor(PipelineStage):
         self.whisper_model_instance = None
         self.detected_language = None
 
-        # Verify video path exists
-        if not os.path.exists(self.video_path):
-            raise FileNotFoundError(f"Video file not found: {video_path}")
-
         # Create output directories
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(os.path.join(output_dir, "screenshots"), exist_ok=True)
 
-        # Check if whisper is available and load model at initialization
+    def run(self, input_data: Dict) -> Dict:
+        video_path = input_data.get("video_path")
+        scenes = input_data.get("scenes", [])
+        
+        if not video_path:
+            raise ValueError("Input must contain 'video_path' key")
+        
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+            
+        if not scenes:
+            raise ValueError("No scenes to process")
+        
+        # Check if whisper is available and load model
         if self.use_whisper:
-            self._check_whisper_availability_and_load_model()
+            self._check_whisper_availability_and_load_model(video_path)
 
-    def run(self, scenes: List[Scene]) -> List[Scene]:
         print("Stage 2: Extracting screenshots and transcripts for each scene")
 
         for scene in scenes:
@@ -427,8 +502,8 @@ class SceneProcessor(PipelineStage):
             timestamp = (scene.start + scene.end) / 2
 
             # Extract screenshot and transcript
-            self.extract_screenshot(timestamp, screenshot_path)
-            transcript = self.extract_transcript(scene.start, scene.end)
+            self.extract_screenshot(video_path, timestamp, screenshot_path)
+            transcript = self.extract_transcript(video_path, scene.start, scene.end)
 
             # Update scene object
             scene.screenshot = screenshot_path
@@ -437,9 +512,12 @@ class SceneProcessor(PipelineStage):
             print(
                 f"Processed scene {scene.scene_id}: {scene.start:.2f}s to {scene.end:.2f}s")
 
-        return scenes
+        # Pass processed scenes and additional data to next stage
+        result = input_data.copy()
+        result["scenes"] = scenes
+        return result
 
-    def _check_whisper_availability_and_load_model(self):
+    def _check_whisper_availability_and_load_model(self, video_path: str):
         """
         Check if Whisper is available, select the appropriate model,
         and load it."""
@@ -478,7 +556,7 @@ class SceneProcessor(PipelineStage):
                 if torch.cuda.is_available() else "cpu")
 
             # Detect language from the middle of the video
-            self._detect_language()
+            self._detect_language(video_path)
 
             # If English is detected, reload with .en model for better accuracy
             if self.detected_language == "en":
@@ -501,7 +579,7 @@ class SceneProcessor(PipelineStage):
             print(f"Error checking Whisper availability or loading model: {e}")
             self.use_whisper = False
 
-    def _detect_language(self):
+    def _detect_language(self, video_path: str):
         """Detect language from a sample audio clip at the middle of the video."""
         try:
             import whisper
@@ -512,7 +590,7 @@ class SceneProcessor(PipelineStage):
                 "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
-                self.video_path
+                video_path
             ]
             result = subprocess.run(
                 cmd,
@@ -525,6 +603,7 @@ class SceneProcessor(PipelineStage):
             # language detection
             middle_time = video_duration / 2
             sample_audio_path = self._extract_audio_clip(
+                video_path,
                 max(0, middle_time - 300),
                 # 600 second clip centered at the middle
                 min(video_duration, middle_time + 300))
@@ -545,12 +624,12 @@ class SceneProcessor(PipelineStage):
             print(f"Error detecting language: {e}")
             self.detected_language = None  # Default to auto-detection if this fails
 
-    def extract_screenshot(self, timestamp: float, output_path: str) -> None:
+    def extract_screenshot(self, video_path: str, timestamp: float, output_path: str) -> None:
         """Extract a screenshot from the video at the specified timestamp."""
         cmd = [
             "ffmpeg",
             "-ss", str(timestamp),
-            "-i", self.video_path,
+            "-i", video_path,
             "-vframes", "1",
             "-q:v", "2",
             output_path,
@@ -571,18 +650,18 @@ class SceneProcessor(PipelineStage):
             print(f"STDERR: {e.stderr}")
             # Continue processing despite error
 
-    def extract_transcript(self, start: float, end: float) -> str:
+    def extract_transcript(self, video_path: str, start: float, end: float) -> str:
         """Extract transcript for the specified time range."""
         if self.use_whisper and self.whisper_model_instance is not None:
             try:
-                return self._transcribe_with_whisper(start, end)
+                return self._transcribe_with_whisper(video_path, start, end)
             except Exception as e:
                 print(f"Whisper transcription failed: {e}")
                 return self._placeholder_transcript(start, end)
         else:
             return self._placeholder_transcript(start, end)
 
-    def _extract_audio_clip(self, start: float, end: float) -> str:
+    def _extract_audio_clip(self, video_path: str, start: float, end: float) -> str:
         """Extract audio clip for a scene using ffmpeg."""
         output_path = tempfile.mktemp(suffix=".wav")
         self.temp_files.append(output_path)
@@ -590,7 +669,7 @@ class SceneProcessor(PipelineStage):
         duration = end - start
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error",
-            "-i", self.video_path,
+            "-i", video_path,
             "-ss", str(start),
             "-t", str(duration),
             "-vn", "-acodec", "pcm_s16le",
@@ -610,11 +689,11 @@ class SceneProcessor(PipelineStage):
                 f"Error extracting audio for scene ({start:.2f}-{end:.2f}s): {e}")
             raise
 
-    def _transcribe_with_whisper(self, start: float, end: float) -> str:
+    def _transcribe_with_whisper(self, video_path: str, start: float, end: float) -> str:
         """Transcribe audio using Whisper with the pre-loaded model and detected language."""
         # Extract audio clip for this scene
         try:
-            audio_clip_path = self._extract_audio_clip(start, end)
+            audio_clip_path = self._extract_audio_clip(video_path, start, end)
         except subprocess.CalledProcessError:
             return self._placeholder_transcript(start, end)
 
@@ -664,13 +743,9 @@ class SceneProcessor(PipelineStage):
             except Exception as e:
                 print(f"Failed to remove temp file {file_path}: {e}")
 
-# ---------------------------------------------------------
-# Stage 3: Session-based Markdown Summary Generation Using Anthropic API
-# ---------------------------------------------------------
-
 
 # ---------------------------------------------------------
-# LLM API Generators
+# Stage 3: LLM API Generators
 # ---------------------------------------------------------
 
 class LLMGenerator(ABC):
@@ -891,6 +966,10 @@ class GeminiGenerator(LLMGenerator):
         return response.text
 
 
+# ---------------------------------------------------------
+# Stage 4: Summary Generation
+# ---------------------------------------------------------
+
 class LLMSummaryGenerator(PipelineStage):
     """
     Generates markdown summaries for video scenes using different LLM APIs.
@@ -946,12 +1025,16 @@ class LLMSummaryGenerator(PipelineStage):
         print(
             f"Using {self.active_provider.upper()} as the primary LLM provider")
 
-    def run(self, processed_scenes: List[Scene]) -> str:
-        print(
-            f"Stage 3: Generating summaries with {self.active_provider.upper()} API...")
+    def run(self, input_data: Dict) -> Dict:
+        scenes = input_data.get("scenes", [])
+        
+        if not scenes:
+            raise ValueError("No scenes to summarize")
+            
+        print(f"Stage 3: Generating summaries with {self.active_provider.upper()} API...")
         complete_summary = "# Video Summary\n\n"
 
-        for i, scene in enumerate(processed_scenes):
+        for i, scene in enumerate(scenes):
             scene_id = scene.scene_id
             screenshot_path = scene.screenshot
             transcript = scene.transcript
@@ -978,7 +1061,7 @@ class LLMSummaryGenerator(PipelineStage):
             # previous content
             scene_summary = self._generate_scene_summary(
                 scene_id, screenshot_path, transcript, start_time, end_time,
-                i, len(processed_scenes))
+                i, len(scenes))
 
             # Add this scene to the complete summary
             complete_summary += scene_heading
@@ -986,7 +1069,7 @@ class LLMSummaryGenerator(PipelineStage):
             complete_summary += scene_summary
 
             # Only add separator if not the last scene
-            if i < len(processed_scenes) - 1:
+            if i < len(scenes) - 1:
                 complete_summary += "\n\n---\n\n"
 
             # Save progress incrementally
@@ -1003,7 +1086,22 @@ class LLMSummaryGenerator(PipelineStage):
             with open(in_progress_file, "w", encoding="utf-8") as f:
                 f.write(complete_summary)
 
-        return complete_summary
+        # Save the final summary with the video name
+        video_path = input_data.get("video_path", "")
+        if video_path:
+            video_basename = os.path.basename(video_path)
+            video_name = os.path.splitext(video_basename)[0]
+            summary_file = os.path.join(self.output_dir, f"{video_name}_sum.md")
+            with open(summary_file, "w", encoding="utf-8") as f:
+                f.write(complete_summary)
+                
+            # Add the summary file path to the result
+            input_data["summary_file"] = summary_file
+
+        # Pass both the complete_summary and the original input data
+        result = input_data.copy()
+        result["complete_summary"] = complete_summary
+        return result
 
     def _encode_image(self, image_path: str) -> str:
         """Encode image as base64 for API request."""
@@ -1152,48 +1250,79 @@ class LLMSummaryGenerator(PipelineStage):
 
     def cleanup(self) -> None:
         """Clean up any resources used by this stage."""
-        # No specific cleanup needed for this stage, but implemented for
-        # completeness
-        pass
-
-
-# ---------------------------------------------------------
-# Pipeline Manager to Orchestrate the Pipeline Stages
-# ---------------------------------------------------------
-
-
-class PipelineManager:
-    """
-    Orchestrates the sequential execution of the pipeline stages.
-    The stages list can be extended or modified to include additional upstream
-    or downstream components.
-    """
-
-    def __init__(self, stages: List[PipelineStage]):
-        self.stages = stages
-
-    def run(self, initial_input: Any = None) -> Any:
-        data = initial_input
-        try:
-            for i, stage in enumerate(self.stages):
-                print(
-                    f"Running stage {i+1}/{len(self.stages)}: {stage.__class__.__name__}")
-                data = stage.run(data)
-            return data
-        except Exception as e:
-            print(f"Pipeline failed: {str(e)}")
-            raise
-        finally:
-            self.cleanup()
-
-    def cleanup(self) -> None:
-        """Clean up all stages."""
-        for stage in self.stages:
+        # Clean up the in-progress summary file if it exists
+        in_progress_file = os.path.join(self.output_dir, "summary_in_progress.md")
+        if os.path.exists(in_progress_file):
             try:
-                stage.cleanup()
+                os.remove(in_progress_file)
+                print(f"Removed temporary file: {in_progress_file}")
             except Exception as e:
-                print(
-                    f"Error during cleanup of {stage.__class__.__name__}: {str(e)}")
+                print(f"Failed to remove temp file {in_progress_file}: {e}")
+
+
+# ---------------------------------------------------------
+# Factory functions for creating pipeline stages
+# ---------------------------------------------------------
+
+def create_scene_detector(
+        threshold: float = 30.0, 
+        downscale_factor: int = 64,
+        min_scene_len: int = 15, 
+        timeout_seconds: int = 180,
+        max_size_mb: float = 20.0, 
+        skip_start: float = 0.0,
+        skip_end: float = 0.0, 
+        max_scene: int = None) -> SceneDetector:
+    """Factory function to create a scene detector stage."""
+    return SceneDetector(
+        threshold=threshold,
+        downscale_factor=downscale_factor,
+        min_scene_len=min_scene_len,
+        timeout_seconds=timeout_seconds,
+        max_size_mb=max_size_mb,
+        skip_start=skip_start,
+        skip_end=skip_end,
+        max_scene=max_scene
+    )
+
+
+def create_scene_processor(
+        output_dir: str,
+        use_whisper: bool = True, 
+        whisper_model: str = "small") -> SceneProcessor:
+    """Factory function to create a scene processor stage."""
+    return SceneProcessor(
+        output_dir=output_dir,
+        use_whisper=use_whisper,
+        whisper_model=whisper_model
+    )
+
+
+def create_summary_generator(
+        model: str = "gemini-2.0-flash",
+        max_tokens: int = 2000, 
+        output_dir: str = "output",
+        preferred_provider: str = "gemini") -> LLMSummaryGenerator:
+    """Factory function to create a summary generator stage."""
+    return LLMSummaryGenerator(
+        model=model,
+        max_tokens=max_tokens,
+        output_dir=output_dir,
+        preferred_provider=preferred_provider
+    )
+
+
+# ---------------------------------------------------------
+# Extension point for custom stages
+# ---------------------------------------------------------
+
+class CustomStage(PipelineStage):
+    """Base class for custom pipeline stages."""
+    
+    def run(self, input_data: Any) -> Any:
+        """Implement custom processing logic in this method."""
+        # Custom processing logic goes here
+        return input_data
 
 
 # ---------------------------------------------------------
@@ -1257,54 +1386,54 @@ if __name__ == "__main__":
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Instantiate pipeline stages
-    scene_detector = SceneDetector(
+    # Create a pipeline
+    pipeline = Pipeline()
+    
+    # Add stages to the pipeline
+    pipeline.add_stage(create_scene_detector(
         threshold=args.threshold,
         downscale_factor=args.downscale,
         timeout_seconds=args.timeout,
         max_size_mb=args.max_size,
         skip_start=args.skip_start,
         skip_end=args.skip_end,
-        max_scene=args.max_scene)
-    scene_processor = SceneProcessor(
-        video_path=args.video_path,
+        max_scene=args.max_scene
+    ))
+    
+    pipeline.add_stage(create_scene_processor(
         output_dir=output_dir,
-        use_whisper=True)  # Now using Whisper by default
-    summary_generator = LLMSummaryGenerator(
+        use_whisper=args.use_whisper
+    ))
+    
+    pipeline.add_stage(create_summary_generator(
         model=args.model,
         max_tokens=args.max_tokens,
         output_dir=output_dir,
-        preferred_provider=args.llm_provider)
-
-    # Assemble and run the pipeline
-    pipeline = PipelineManager([
-        scene_detector,
-        scene_processor,
-        summary_generator
-    ])
+        preferred_provider=args.llm_provider
+    ))
 
     # Create input data with video path
     input_data = {"video_path": args.video_path}
 
     try:
         # Run the pipeline
-        final_markdown_summary = pipeline.run(input_data)
-
-        # Save the final markdown summary to a file with video name + _sum
-        # suffix
-        video_basename = os.path.basename(args.video_path)
-        video_name = os.path.splitext(video_basename)[0]
-        summary_file = os.path.join(output_dir, f"{video_name}_sum.md")
-
-        with open(summary_file, "w") as f:
-            f.write(final_markdown_summary)
-        print(f"Pipeline complete. Markdown summary saved to: {summary_file}")
-
-        # Clean up the in-progress summary file if it exists
-        in_progress_file = os.path.join(output_dir, "summary_in_progress.md")
-        if os.path.exists(in_progress_file):
-            os.remove(in_progress_file)
-            print(f"Removed temporary file: {in_progress_file}")
+        result = pipeline.run(input_data)
+        
+        # Get the final summary and file path from the result
+        final_markdown_summary = result.get("complete_summary", "")
+        summary_file = result.get("summary_file")
+        
+        if summary_file:
+            print(f"Pipeline complete. Markdown summary saved to: {summary_file}")
+        else:
+            # Fallback if summary file wasn't created by the pipeline
+            video_basename = os.path.basename(args.video_path)
+            video_name = os.path.splitext(video_basename)[0]
+            summary_file = os.path.join(output_dir, f"{video_name}_sum.md")
+            
+            with open(summary_file, "w") as f:
+                f.write(final_markdown_summary)
+            print(f"Pipeline complete. Markdown summary saved to: {summary_file}")
 
     except Exception as e:
         print(f"Pipeline failed with error: {e}")

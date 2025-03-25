@@ -6,7 +6,14 @@ This script tests screenshot extraction and transcript generation on a sample vi
 
 import os
 import json
-from vid_summerizer import SceneProcessor, Scene
+import sys
+from pathlib import Path
+
+# Add the parent directory to the path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from video_summarizer.core import Scene, PipelineResult
+from video_summarizer.stages import create_scene_processor
 
 
 def test_scene_processor(test_video_path, test_output_dir):
@@ -19,8 +26,18 @@ def test_scene_processor(test_video_path, test_output_dir):
     # Load or create sample scenes
     sample_scenes_file = os.path.join(
         test_output_dir, "scenes_test.json")
+    pipeline_result_file = os.path.join(
+        test_output_dir, "scenes_test_pipeline_result.json")
 
-    if os.path.exists(sample_scenes_file):
+    if os.path.exists(pipeline_result_file):
+        print(f"Loading PipelineResult from {pipeline_result_file}")
+        with open(pipeline_result_file, 'r') as f:
+            data = json.load(f)
+        # Convert to PipelineResult
+        result = PipelineResult.from_dict(data)
+        scenes = result.scenes
+        
+    elif os.path.exists(sample_scenes_file):
         print(f"Loading sample scenes from {sample_scenes_file}")
         with open(sample_scenes_file, 'r') as f:
             scene_dicts = json.load(f)
@@ -30,6 +47,12 @@ def test_scene_processor(test_video_path, test_output_dir):
             start=s["start"],
             end=s["end"]
         ) for s in scene_dicts]
+        
+        # Create a PipelineResult with the scenes
+        result = PipelineResult(
+            video_path=test_video_path,
+            scenes=scenes
+        )
     else:
         # Create some sample scenes manually
         print("Sample scenes file not found, creating sample scenes")
@@ -38,16 +61,30 @@ def test_scene_processor(test_video_path, test_output_dir):
             Scene(scene_id=2, start=30.0, end=40.0),
             Scene(scene_id=3, start=50.0, end=60.0)
         ]
+        
+        # Create a PipelineResult with the scenes
+        result = PipelineResult(
+            video_path=test_video_path,
+            scenes=scenes
+        )
 
-    # Process only the first 3 scenes to save time
-    scenes_to_process = scenes[:30] if len(scenes) > 30 else scenes
-    print(f"Processing {len(scenes_to_process)} scenes")
+    # Process only the first few scenes to save time
+    if len(scenes) > 30:
+        scenes_to_process = scenes[:30]
+        result.scenes = scenes_to_process
+        print(f"Processing {len(scenes_to_process)} out of {len(scenes)} scenes")
+    else:
+        print(f"Processing all {len(scenes)} scenes")
 
     # Create and run SceneProcessor
-    processor = SceneProcessor(
-        video_path=test_video_path,
-        output_dir=processor_output_dir)
-    processed_scenes = processor.run(scenes_to_process)
+    processor = create_scene_processor(
+        output_dir=processor_output_dir,
+        use_whisper=True
+    )
+    
+    # Process the scenes
+    processed_result = processor.run(result)
+    processed_scenes = processed_result.scenes
 
     # Print results
     print("\nProcessed scenes:")
@@ -60,35 +97,17 @@ def test_scene_processor(test_video_path, test_output_dir):
             f"  Transcript: {scene.transcript}")
         print()
 
-    # Convert to dict for JSON serialization
-    scene_dicts = []
-    for scene in processed_scenes:
-        scene_dicts.append({
-            "scene_id": scene.scene_id,
-            "start": scene.start,
-            "end": scene.end,
-            "screenshot": scene.screenshot,
-            "transcript": scene.transcript
-        })
-
     # Save processed scenes to a JSON file
     result_file = os.path.join(test_output_dir, "processed_scenes.json")
     with open(result_file, 'w', encoding='utf-8') as f:
-        json.dump(scene_dicts, f, indent=2, ensure_ascii=False)
+        json.dump(processed_result.to_dict(), f, indent=2, ensure_ascii=False)
 
     print(f"Results saved to {result_file}")
     print(f"Screenshots saved to {processor_output_dir}/screenshots/")
 
 
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-
-    # Get the project root directory
-    root_dir = Path(__file__).parent.parent
-
     # Import from conftest.py
-    sys.path.insert(0, str(root_dir))
     from tests.conftest import TEST_VIDEO_PATH, TEST_OUTPUT_DIR
 
     # Run the test
