@@ -155,28 +155,37 @@ class SummaryFormatter(PipelineStage):
             f"You are a specialized document formatter that creates professional Marp slide decks from technical content.\n\n"
             f"Your task is to convert the following raw technical summary into a professional Marp presentation slide deck.\n\n"
             f"IMPORTANT FORMATTING REQUIREMENTS:\n"
-            f"1. Start with a YAML front matter block that includes title, subtitle, author, and taxonomy fields.\n"
+            f"1. Start with a YAML front matter(e.g. \"---\nfield1: val1\nfield2: val2\n---\n\")"
+            "that includes marp-theme, title, subtitle, and taxonomy fields.\n"
+            f"   - The marp-theme field has only 2 options: proposal or update"
             f"   - The taxonomy field should be a hierarchical categorization from \"stem\" to \"leaf\" based on the content.\n"
-            f"   - Example: taxonomy: \"Technology > AI > Computer Vision\"\n"
-            f"2. Organize the content into clear, visually appealing slides with proper Marp directives.\n"
-            f"3. Use appropriate Marp syntax for page breaks, backgrounds, layouts, etc.\n"
-            f"4. Preserve all technical details while making the presentation more engaging.\n"
-            f"5. Include speaker notes where appropriate.\n"
-            f"6. The last slide MUST be DETAIL-ORIENTED takeaways in bullet points"
-            f"7. Mark the beginning of your formatted content with '---BEGIN MARP DECK---' and the ending with '---END MARP DECK---'.\n\n"
+            f"   - The taxonomy field should be made of 3-6 keywords"
+            f"   - Example: taxonomy: \"Interconnect > Cable > Optical cable\"\n"
+            f"   - Wrap field value with double quotes if it contains non-alphabetic characters\n"
+            f"2. Organize the content into self-contained & comprehensive points "
+            "on each slide WITHOUT using Marp directives.\n"
+            f"3. Use ONLY \"---\" for page breaks, and ONLY use SECOND-level tiltle for each slide\n"
+            f"4. Preserve ALL technical details while making the presentation intuitive.\n"
+            f"5. The last slide MUST be DETAIL-ORIENTED takeaways in points of complete and self-contained sentences\n"
+            f"6. Mark the beginning of your formatted content with '---BEGIN MARP DECK---' and the ending with '---END MARP DECK---'.\n\n"
+            f"7. NEVER, NEVER, NEVER generate front page(i.e. <!-- _class: front-page -->)!!!\n"
+            f"8. use \"![width:500px](url/to/img)\" to set image width to 500px\n"
+            f"9. DO NOT USE HTML COMMENTS for page breaks\n"
             f"Here is the content to format:\n\n{summary_content}")
 
         # Use the active provider to generate the formatted content
         generator = self.generators[self.active_provider]
         try:
             formatted_text = generator.generate_content(prompt)
+            formatted_test = formatted_text.replace("```yaml", "---")
+            formatted_test = formatted_text.replace("---\n---", "---")
 
             # Extract content between the markers
             if "---BEGIN MARP DECK---" in formatted_text and "---END MARP DECK---" in formatted_text:
                 start_idx = formatted_text.find(
                     "---BEGIN MARP DECK---") + len("---BEGIN MARP DECK---")
                 end_idx = formatted_text.find("---END MARP DECK---")
-                formatted_text = formatted_text[start_idx:end_idx].strip()
+                formatted_text = formatted_text[start_idx:end_idx - 1].strip()
 
             return formatted_text
 
