@@ -177,8 +177,8 @@ class SummaryFormatter(PipelineStage):
         generator = self.generators[self.active_provider]
         try:
             formatted_text = generator.generate_content(prompt)
-            formatted_text = formatted_text.replace("```yaml", "---")
-            formatted_text = formatted_text.replace("---\n---", "---")
+            formatted_test = formatted_text.replace("```yaml", "---")
+            formatted_test = formatted_text.replace("---\n---", "---")
 
             # Extract content between the markers
             if "---BEGIN MARP DECK---" in formatted_text and "---END MARP DECK---" in formatted_text:
