@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """
-Test script for the AnthropicSummaryGenerator stage of the video summarization pipeline.
-This script tests the summary generation for a small set of processed scenes.
+Test script for the LLMSummaryGenerator stage of the video summarization pipeline.
+This script tests the summary generation for a small set of processed scenes
+using the multi-provider LLM generator.
 """
 
 import os
 import json
-from vid_summerizer import AnthropicSummaryGenerator, Scene
+import argparse
+from vid_summerizer import LLMSummaryGenerator, Scene
 
 
-def test_summary_generator(test_output_dir):
-    """Test the AnthropicSummaryGenerator with sample processed scenes."""
+def test_summary_generator(test_output_dir, provider="anthropic"):
+    """Test the LLMSummaryGenerator with sample processed scenes."""
 
     # Path for the test summary file
-    test_summary_file = os.path.join(test_output_dir, "test_summary.md")
+    test_summary_file = os.path.join(test_output_dir, f"test_summary_{provider}.md")
 
     # Load processed scenes from previous test or create sample
     processed_scenes_file = os.path.join(
@@ -59,18 +61,36 @@ def test_summary_generator(test_output_dir):
                 start=10.0,
                 end=20.0,
                 screenshot=mock_screenshot_path,
-                transcript="This is a sample transcript for testing the summary generator with Claude 3.7."
+                transcript="This is a sample transcript for testing the summary generator with different LLM providers."
             )
         ]
 
     # Process only the first scene to save on API costs during testing
     scenes_to_process = scenes[:1]
-    print(f"Processing {len(scenes_to_process)} scenes for summary generation")
+    print(f"Processing {len(scenes_to_process)} scenes for summary generation using {provider.upper()}")
 
-    # Create and run AnthropicSummaryGenerator
+    # Create and run LLMSummaryGenerator with specified provider
     try:
-        generator = AnthropicSummaryGenerator(
-            model="claude-3-7-sonnet-20250219", max_tokens=500)
+        # Set appropriate model for each provider
+        if provider == "anthropic":
+            model = "claude-3-7-sonnet-20250219"
+        elif provider == "openai":
+            model = "gpt-4o-2024-11-20"
+        elif provider == "gemini":
+            model = "gemini-2.0-flash"
+        else:
+            model = "claude-3-7-sonnet-20250219"  # Default
+            
+        generator = LLMSummaryGenerator(
+            model=model,
+            max_tokens=500,
+            output_dir=test_output_dir,
+            preferred_provider=provider
+        )
+        
+        print(f"Active provider: {generator.active_provider}")
+        print(f"Available providers: {', '.join(generator.available_generators)}")
+        
         summary = generator.run(scenes_to_process)
 
         # Save the summary to a file
@@ -105,6 +125,12 @@ if __name__ == "__main__":
     # Import from conftest.py
     sys.path.insert(0, str(root_dir))
     from tests.conftest import TEST_OUTPUT_DIR
+    
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Test the LLM summary generator")
+    parser.add_argument("--provider", choices=["anthropic", "openai", "gemini"], 
+                        default="anthropic", help="LLM provider to test")
+    args = parser.parse_args()
 
     # Run the test
-    test_summary_generator(TEST_OUTPUT_DIR)
+    test_summary_generator(TEST_OUTPUT_DIR, args.provider)

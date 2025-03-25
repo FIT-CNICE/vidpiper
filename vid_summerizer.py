@@ -669,18 +669,29 @@ class SceneProcessor(PipelineStage):
 # ---------------------------------------------------------
 
 
-class AnthropicSummaryGenerator(PipelineStage):
-    """
-    Generates markdown summaries for video scenes using
-    the latest Claude model (3.7).
+# ---------------------------------------------------------
+# LLM API Generators
+# ---------------------------------------------------------
 
-    This implementation uses the Anthropic Python client with multimodal support
-    to process both screenshots and transcripts for each scene, with optimizations
-    for token usage and focus on visual content.
-    """
+class LLMGenerator(ABC):
+    """Abstract base class for LLM API generators."""
+
+    @abstractmethod
+    def generate_content(self, prompt: str, image_data: str = None) -> str:
+        """Generate content using the LLM API."""
+        pass
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """Check if this LLM API is available for use."""
+        pass
+
+
+class AnthropicGenerator(LLMGenerator):
+    """Generator using Anthropic's Claude API."""
 
     def __init__(self, model: str = "claude-3-7-sonnet-20250219",
-                 max_tokens: int = 2000, output_dir: str = "output"):
+                 max_tokens: int = 2000):
         try:
             import anthropic
         except ImportError:
@@ -688,25 +699,24 @@ class AnthropicSummaryGenerator(PipelineStage):
                 "The anthropic package is required. Install it with 'pip install anthropic'.")
 
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY not set in environment.")
-
-        # Initialize the Anthropic client
-        self.client = anthropic.Anthropic(api_key=self.api_key)
         self.model = model
         self.max_tokens = max_tokens
-        self.output_dir = output_dir  # Store the output directory
-        self.summaries = {}  # Store individual scene summaries
-        self.previous_summary_context = ""  # Track previous summary for continuity
-        self.processed_scenes_count = 0  # Track number of processed scenes
+        self.client = None
+        if self.api_key:
+            self.client = anthropic.Anthropic(api_key=self.api_key)
 
-        # System prompt for technical content summarization balanced for
-        # general audience
-        self.system_prompt = (
+    def is_available(self) -> bool:
+        return self.api_key is not None and self.client is not None
+
+    def generate_content(self, prompt: str, image_data: str = None) -> str:
+        if not self.is_available():
+            raise ValueError("Anthropic API is not available.")
+
+        system_prompt = (
             "You are a technical content summarizer specializing in creating accessible, "
             "accurate summaries of technical presentations and demos for general audiences. "
             "Use BOTH THE VISUAL CONTENT AND TRANSCRIPT to create comprehensive summaries. "
-            "Transcript CONTAINS typo of technical jargons"
+            "Transcript CONTAINS typo of technical jargons. "
             "For any technical terms or concepts, provide intuitive explanations that are "
             "accessible to non-experts while maintaining technical accuracy. "
             "Identify key technical concepts, data points, and main arguments from both the visuals "
@@ -714,8 +724,231 @@ class AnthropicSummaryGenerator(PipelineStage):
             "Create logically connected summaries that flow naturally from previous scenes while ensuring "
             "technical content is understandable to a broad audience.")
 
+        if image_data:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=min(self.max_tokens, 3000),
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/jpeg",
+                                    "data": image_data
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ]
+            )
+        else:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=min(self.max_tokens, 3000),
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+
+        return message.content[0].text
+
+
+class OpenAIGenerator(LLMGenerator):
+    """Generator using OpenAI's API."""
+
+    def __init__(self, model: str = "gpt-4o-2024-11-20",
+                 max_tokens: int = 2000):
+        try:
+            import openai
+        except ImportError:
+            raise ImportError(
+                "The openai package is required. Install it with 'pip install openai'.")
+
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        self.model = model
+        self.max_tokens = max_tokens
+        self.client = None
+        if self.api_key:
+            from openai import OpenAI
+            self.client = OpenAI(api_key=self.api_key)
+
+    def is_available(self) -> bool:
+        return self.api_key is not None and self.client is not None
+
+    def generate_content(self, prompt: str, image_data: str = None) -> str:
+        if not self.is_available():
+            raise ValueError("OpenAI API is not available.")
+
+        system_message = (
+            "You are a technical content summarizer specializing in creating accessible, "
+            "accurate summaries of technical presentations and demos for general audiences. "
+            "Use BOTH THE VISUAL CONTENT AND TRANSCRIPT to create comprehensive summaries. "
+            "Transcript CONTAINS typo of technical jargons. "
+            "For any technical terms or concepts, provide intuitive explanations that are "
+            "accessible to non-experts while maintaining technical accuracy. "
+            "Identify key technical concepts, data points, and main arguments from both the visuals "
+            "and the transcript, explaining complex ideas using analogies or simplified examples when appropriate. "
+            "Create logically connected summaries that flow naturally from previous scenes while ensuring "
+            "technical content is understandable to a broad audience.")
+
+        messages = [
+            {"role": "system", "content": system_message}
+        ]
+
+        if image_data:
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_data}"
+                        }
+                    }
+                ]
+            })
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=self.max_tokens
+        )
+
+        return response.choices[0].message.content
+
+
+class GeminiGenerator(LLMGenerator):
+    """Generator using Google's Gemini API."""
+
+    def __init__(self, model: str = "gemini-2.0-flash",
+                 max_tokens: int = 2000):
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            raise ImportError(
+                "The google-generativeai package is required. Install it with 'pip install google-generativeai'.")
+
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        self.model = model
+        self.max_tokens = max_tokens
+        self.genai = None
+        if self.api_key:
+            import google.generativeai as genai
+            genai.configure(api_key=self.api_key)
+            self.genai = genai
+
+    def is_available(self) -> bool:
+        return self.api_key is not None and self.genai is not None
+
+    def generate_content(self, prompt: str, image_data: str = None) -> str:
+        if not self.is_available():
+            raise ValueError("Gemini API is not available.")
+
+        system_prompt = (
+            "You are a technical content summarizer specializing in creating accessible, "
+            "accurate summaries of technical presentations and demos for general audiences. "
+            "Use BOTH THE VISUAL CONTENT AND TRANSCRIPT to create comprehensive summaries. "
+            "Transcript CONTAINS typo of technical jargons. "
+            "For any technical terms or concepts, provide intuitive explanations that are "
+            "accessible to non-experts while maintaining technical accuracy. "
+            "Identify key technical concepts, data points, and main arguments from both the visuals "
+            "and the transcript, explaining complex ideas using analogies or simplified examples when appropriate. "
+            "Create logically connected summaries that flow naturally from previous scenes while ensuring "
+            "technical content is understandable to a broad audience.")
+
+        if image_data and self.model == "gemini-2.0-flash":
+            import base64
+            from PIL import Image
+            import io
+
+            image_bytes = base64.b64decode(image_data)
+            image = Image.open(io.BytesIO(image_bytes))
+
+            model = self.genai.GenerativeModel(self.model)
+            response = model.generate_content([system_prompt, prompt, image])
+        else:
+            model = self.genai.GenerativeModel("gemini-2.0-flash-lite")
+            response = model.generate_content([system_prompt, prompt])
+
+        return response.text
+
+
+class LLMSummaryGenerator(PipelineStage):
+    """
+    Generates markdown summaries for video scenes using different LLM APIs.
+
+    This implementation can switch between different LLM providers (Anthropic, OpenAI, Gemini)
+    based on availability and preference, with fallback mechanisms.
+    """
+
+    def __init__(self, model: str = "gemini-2.0-flash",
+                 max_tokens: int = 2000, output_dir: str = "output",
+                 preferred_provider: str = "gemini"):
+        self.max_tokens = max_tokens
+        self.output_dir = output_dir  # Store the output directory
+        self.summaries = {}  # Store individual scene summaries
+        self.previous_summary_context = ""  # Track previous summary for continuity
+        self.processed_scenes_count = 0  # Track number of processed scenes
+
+        # Initialize all available LLM generators
+        self.generators = {
+            "gemini": GeminiGenerator(
+                model,
+                max_tokens),
+            "anthropic": AnthropicGenerator(
+                "claude-3-7-sonnet-20250219",
+                max_tokens),
+            "openai": OpenAIGenerator(
+                "gpt-4o-2024-11-20",
+                max_tokens)
+                 }
+
+        # Set the preferred provider
+        self.preferred_provider = preferred_provider.lower()
+
+        # Determine which generators are available
+        self.available_generators = [
+            provider for provider, generator in self.generators.items()
+            if generator.is_available()
+        ]
+
+        if not self.available_generators:
+            raise ValueError(
+                "No LLM API keys found. Set at least one of ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY.")
+
+        print(
+            f"Available LLM providers: {', '.join(self.available_generators)}")
+
+        # Set the active generator based on preference and availability
+        if self.preferred_provider in self.available_generators:
+            self.active_provider = self.preferred_provider
+        else:
+            self.active_provider = self.available_generators[0]
+
+        print(
+            f"Using {self.active_provider.upper()} as the primary LLM provider")
+
     def run(self, processed_scenes: List[Scene]) -> str:
-        print("Stage 3: Generating summaries with Claude 3.7...")
+        print(
+            f"Stage 3: Generating summaries with {self.active_provider.upper()} API...")
         complete_summary = "# Video Summary\n\n"
 
         for i, scene in enumerate(processed_scenes):
@@ -726,7 +959,7 @@ class AnthropicSummaryGenerator(PipelineStage):
             end_time = scene.end
 
             print(
-                f"Processing scene {scene_id} ({start_time:.2f}s - {end_time:.2f}s)...")
+                f"Processing scene {scene_id} ({start_time:.2f}s - {end_time:.2f}s) with {self.active_provider.upper()}...")
 
             # Format timestamp as MM:SS
             minutes, seconds = divmod(int(start_time), 60)
@@ -772,12 +1005,6 @@ class AnthropicSummaryGenerator(PipelineStage):
 
         return complete_summary
 
-    def _generate_overall_introduction(
-            self, initial_scenes: List[Scene]) -> str:
-        """Generate an overall introduction based on the first few scenes."""
-        # Method kept for compatibility but no longer used
-        return ""
-
     def _encode_image(self, image_path: str) -> str:
         """Encode image as base64 for API request."""
         with open(image_path, "rb") as img_file:
@@ -788,8 +1015,8 @@ class AnthropicSummaryGenerator(PipelineStage):
             start_time: float, end_time: float, scene_index: int,
             total_scenes: int) -> str:
         """
-        Generate a summary for a single scene using Claude 3.7's
-        multimodal capabilities with retry mechanism for handling API errors.
+        Generate a summary for a single scene using the selected LLM API
+        with retry mechanism for handling API errors and fallback to alternative providers.
         """
         # Encode the screenshot as base64
         base64_image = self._encode_image(screenshot_path)
@@ -800,9 +1027,9 @@ class AnthropicSummaryGenerator(PipelineStage):
             # First scene - establish the topic
             context_directive = (
                 "As this is the first scene, " +
-                "establish the main topic and context of the presentation." +
-                "if the image content does not look like part of a demo, " +
-                "presentation, or panel discussion. Tell me using EXACTLY " +
+                "establish the main topic and context of the presentation. " +
+                "If the image content does not look like part of a demo, " +
+                "presentation, or panel discussion, tell me using EXACTLY " +
                 "the following words: \"NO USEFUL CONTENT FOUND!\""
             )
         elif scene_index == total_scenes - 1:
@@ -843,78 +1070,91 @@ class AnthropicSummaryGenerator(PipelineStage):
             "3. The main point of this segment, explaining technical terms in an intuitive yet rigorous way\n\n"
             "Make your summary accessible to a general audience by explaining technical terms using everyday language, analogies, or simplified examples while maintaining technical accuracy.")
 
+        # Initialize providers list with active provider first, then others as
+        # fallbacks
+        providers_to_try = [self.active_provider] + [p
+                                                     for p in self.available_generators if p != self.active_provider]
+
         # Retry parameters
         max_retries = 3
         retry_delay = 2  # Initial delay in seconds
-        retry_count = 0
 
-        while retry_count < max_retries:
-            try:
-                # Create message with the Anthropic client
-                message = self.client.messages.create(
-                    model=self.model,
-                    max_tokens=min(self.max_tokens, 3000),
-                    system=self.system_prompt,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": "image/jpeg",
-                                        "data": base64_image
-                                    }
-                                },
-                                {
-                                    "type": "text",
-                                    "text": user_prompt
-                                }
-                            ]
-                        }
-                    ]
-                )
+        for provider in providers_to_try:
+            # Skip unavailable providers
+            if provider not in self.available_generators:
+                continue
 
-                # Extract the response text
-                generated_text = message.content[0].text
+            retry_count = 0
+            generator = self.generators[provider]
 
-                generated_text = generated_text.replace("\n## ", "\n### ")
-                generated_text = generated_text.replace("\n# ", "\n## ")
-
-                print(f"Generated summary for scene {scene_id}")
-                return generated_text
-
-            except Exception as e:
-                retry_count += 1
-                error_str = str(e)
-                error_msg = "Error generating summary for scene " + \
-                    f"{scene_id} (attempt {retry_count}/{max_retries}):" + \
-                    f"{error_str}"
-                print(error_msg)
-
-                # Check for overload or rate limit errors
-                is_overload = "overloaded" in error_str.lower(
-                ) or "rate limit" in error_str.lower() or "429" in error_str
-
-                if retry_count < max_retries:
-                    # Exponential backoff with jitter
-                    import random
-                    # Add random jitter between 0-0.5 seconds
-                    jitter = random.uniform(0, 0.5)
-                    # Use longer backoff for overload errors
-                    base_delay = retry_delay * 5 if is_overload else retry_delay
-                    sleep_time = (
-                        base_delay * (2 ** (retry_count - 1))) + jitter
+            while retry_count < max_retries:
+                try:
                     print(
-                        f"Retrying in {sleep_time:.2f} seconds..." +
-                        (" (Rate limit/overload detected)"
-                         if is_overload else ""))
-                    time.sleep(sleep_time)
-                else:
-                    # All retries failed, return error message
-                    return "*Error generating summary for scene " + \
-                        f"{scene_id} after {max_retries} attempts: {str(e)}*"
+                        f"Attempting to generate summary for scene {scene_id} using {provider.upper()} (attempt {retry_count+1}/{max_retries})...")
+
+                    # Generate content using the current provider
+                    generated_text = generator.generate_content(
+                        user_prompt, base64_image)
+
+                    # Format headings consistently
+                    generated_text = generated_text.replace("\n## ", "\n### ")
+                    generated_text = generated_text.replace("\n# ", "\n## ")
+
+                    # If we're not using the active provider, consider
+                    # switching
+                    if provider != self.active_provider:
+                        print(
+                            f"Successfully generated content with fallback provider {provider.upper()}. " +
+                            f"Switching active provider from {self.active_provider.upper()} to {provider.upper()}")
+                        self.active_provider = provider
+
+                    print(
+                        f"Generated summary for scene {scene_id} using {provider.upper()}")
+                    return generated_text
+
+                except Exception as e:
+                    retry_count += 1
+                    error_str = str(e)
+                    error_msg = f"Error generating summary with {provider.upper()} for scene " + \
+                        f"{scene_id} (attempt {retry_count}/{max_retries}): {error_str}"
+                    print(error_msg)
+
+                    # Check for overload or rate limit errors
+                    is_overload = any(
+                        phrase in error_str.lower()
+                        for phrase
+                        in
+                        ["overloaded", "rate limit", "429", "quota",
+                         "capacity"])
+
+                    if retry_count < max_retries:
+                        # Exponential backoff with jitter
+                        import random
+                        # Add random jitter between 0-0.5 seconds
+                        jitter = random.uniform(0, 0.5)
+                        # Use longer backoff for overload errors
+                        base_delay = retry_delay * 5 if is_overload else retry_delay
+                        sleep_time = (
+                            base_delay * (2 ** (retry_count - 1))) + jitter
+                        print(
+                            f"Retrying in {sleep_time:.2f} seconds..." +
+                            (" (Rate limit/overload detected)" if is_overload else ""))
+                        time.sleep(sleep_time)
+                    else:
+                        # All retries with current provider failed, try next
+                        # provider
+                        print(
+                            f"All attempts with {provider.upper()} failed. Trying next provider...")
+                        break
+
+        # If we get here, all providers failed
+        return f"*Error generating summary for scene {scene_id} after trying all available LLM providers*"
+
+    def cleanup(self) -> None:
+        """Clean up any resources used by this stage."""
+        # No specific cleanup needed for this stage, but implemented for
+        # completeness
+        pass
 
 
 # ---------------------------------------------------------
@@ -980,7 +1220,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         default="claude-3-7-sonnet-20250219",
-        help="Claude model to use")
+        help="LLM model to use")
     parser.add_argument(
         "--max-tokens", type=int, default=1500,
         help="Maximum tokens per API response")
@@ -999,6 +1239,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-scene", type=int, default=None,
         help="Maximum number of scenes to detect. If None, uses video length / 120 seconds per scene.")
+    parser.add_argument(
+        "--llm-provider", default="anthropic",
+        choices=["anthropic", "openai", "gemini"],
+        help="LLM provider to use. Options: anthropic, openai, gemini")
 
     args = parser.parse_args()
 
@@ -1026,10 +1270,11 @@ if __name__ == "__main__":
         video_path=args.video_path,
         output_dir=output_dir,
         use_whisper=True)  # Now using Whisper by default
-    summary_generator = AnthropicSummaryGenerator(
+    summary_generator = LLMSummaryGenerator(
         model=args.model,
         max_tokens=args.max_tokens,
-        output_dir=output_dir)
+        output_dir=output_dir,
+        preferred_provider=args.llm_provider)
 
     # Assemble and run the pipeline
     pipeline = PipelineManager([

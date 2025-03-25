@@ -19,11 +19,13 @@ from tests.test_scene_processor import test_scene_processor
 from tests.test_summary_generator import test_summary_generator
 
 
-def run_single_test(test_name, force=False):
+def run_single_test(test_name, force=False, provider="anthropic"):
     """Run a single test by name with dependency checking."""
 
     print("=" * 50)
     print(f"RUNNING TEST: {test_name.upper()}")
+    if test_name == "summary_generator":
+        print(f"LLM PROVIDER: {provider.upper()}")
     print("=" * 50)
 
     # Check dependencies
@@ -42,7 +44,7 @@ def run_single_test(test_name, force=False):
             test_scene_processor(TEST_VIDEO_PATH, TEST_OUTPUT_DIR)
 
         elif test_name == "summary_generator":
-            test_summary_generator(TEST_OUTPUT_DIR)
+            test_summary_generator(TEST_OUTPUT_DIR, provider)
 
         else:
             print(f"ERROR: Unknown test name: {test_name}")
@@ -74,6 +76,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force", action="store_true",
         help="Force test execution even if dependencies aren't satisfied")
+    parser.add_argument(
+        "--provider", choices=["anthropic", "openai", "gemini"],
+        default="anthropic", help="LLM provider to use for summary generation")
 
     args = parser.parse_args()
-    sys.exit(run_single_test(args.test_name, args.force))
+    sys.exit(run_single_test(args.test_name, args.force, args.provider))
