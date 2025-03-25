@@ -1240,7 +1240,7 @@ if __name__ == "__main__":
         "--max-scene", type=int, default=None,
         help="Maximum number of scenes to detect. If None, uses video length / 120 seconds per scene.")
     parser.add_argument(
-        "--llm-provider", default="anthropic",
+        "--llm-provider", default="gemini",
         choices=["anthropic", "openai", "gemini"],
         help="LLM provider to use. Options: anthropic, openai, gemini")
 
