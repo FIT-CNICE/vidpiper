@@ -9,3 +9,4 @@ __pycache__/
 /vid
 /sum_outputs
 /fmt_outputs
+*_prompt.md
