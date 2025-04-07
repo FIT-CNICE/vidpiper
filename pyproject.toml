@@ -1,0 +1,35 @@
+[project]
+name = "vid-agent"
+version = "0.1.0"
+description = "AI agent for summarizing webinar videos"
+authors = [
+    {name = "fit-sizhe",email = "sizhe.liu@fit-foxconn.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python>=4.5.0",
+    "numpy>=1.19.0",
+    "requests>=2.25.0",
+    "scenedetect>=0.6.1",
+    "openai-whisper>=20240901",
+    "torch>=2.0.0",
+    "anthropic>=0.49.0",
+    "openai>=1.0.0",
+    "google-generativeai>=0.3.0",
+    "pillow>=9.0.0",
+    "python-dotenv>=0.19.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0"
+]
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
