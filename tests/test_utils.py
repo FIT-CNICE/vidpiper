@@ -18,30 +18,48 @@ def create_mock_scene(scene_id, start_time, end_time, test_output_dir):
 
     # Create a directory for screenshots if it doesn't exist
     mock_screenshot_dir = os.path.join(
-        test_output_dir, "processor_output/screenshots")
+        test_output_dir, "processor_output/screenshots"
+    )
     os.makedirs(mock_screenshot_dir, exist_ok=True)
 
     # Create a mock screenshot file
     mock_screenshot_path = os.path.join(
-        mock_screenshot_dir, f"scene_{scene_id}.jpg")
+        mock_screenshot_dir, f"scene_{scene_id}.jpg"
+    )
 
     # Create a dummy image with some text to make it more realistic
     img = np.ones((480, 640, 3), dtype=np.uint8) * 240  # Light gray background
 
     # Add some text
     cv2.putText(
-        img, f"Test Scene {scene_id}", (50, 100),
-        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255),
-        2, cv2.LINE_AA)
-    cv2.putText(img, f"Time: {start_time:.2f}s - {end_time:.2f}s", (50, 150),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 1, cv2.LINE_AA)
+        img,
+        f"Test Scene {scene_id}",
+        (50, 100),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1,
+        (0, 0, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        img,
+        f"Time: {start_time:.2f}s - {end_time:.2f}s",
+        (50, 150),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 0, 0),
+        1,
+        cv2.LINE_AA,
+    )
 
     # Write the image
     cv2.imwrite(mock_screenshot_path, img)
 
     # Create a mock transcript
-    mock_transcript = f"This is a sample transcript for test scene {scene_id}, " \
+    mock_transcript = (
+        f"This is a sample transcript for test scene {scene_id}, "
         f"which runs from {start_time:.2f} to {end_time:.2f} seconds."
+    )
 
     # Return a Scene object
     return Scene(
@@ -49,7 +67,7 @@ def create_mock_scene(scene_id, start_time, end_time, test_output_dir):
         start=start_time,
         end=end_time,
         screenshot=mock_screenshot_path,
-        transcript=mock_transcript
+        transcript=mock_transcript,
     )
 
 
@@ -64,11 +82,8 @@ def create_mock_scenes(num_scenes, test_output_dir):
         end_time = i * scene_duration
 
         scenes.append(
-            create_mock_scene(
-                i,
-                start_time,
-                end_time,
-                test_output_dir))
+            create_mock_scene(i, start_time, end_time, test_output_dir)
+        )
 
     return scenes
 
@@ -80,13 +95,15 @@ def save_scenes_to_json(scenes, output_path, as_dict=True):
         # Convert Scene objects to dictionaries
         scene_dicts = []
         for scene in scenes:
-            scene_dicts.append({
-                "scene_id": scene.scene_id,
-                "start": scene.start,
-                "end": scene.end,
-                "screenshot": scene.screenshot,
-                "transcript": scene.transcript
-            })
+            scene_dicts.append(
+                {
+                    "scene_id": scene.scene_id,
+                    "start": scene.start,
+                    "end": scene.end,
+                    "screenshot": scene.screenshot,
+                    "transcript": scene.transcript,
+                }
+            )
         data = scene_dicts
     else:
         # Keep as Scene objects (not JSON serializable, but useful for
@@ -97,7 +114,7 @@ def save_scenes_to_json(scenes, output_path, as_dict=True):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     # Write to JSON file
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(data, f, indent=2)
 
     return output_path
@@ -109,18 +126,20 @@ def load_scenes_from_json(json_path):
     if not os.path.exists(json_path):
         raise FileNotFoundError(f"JSON file not found: {json_path}")
 
-    with open(json_path, 'r') as f:
+    with open(json_path, "r") as f:
         scene_dicts = json.load(f)
 
     # Convert dictionaries to Scene objects
     scenes = []
     for s in scene_dicts:
-        scenes.append(Scene(
-            scene_id=s["scene_id"],
-            start=s["start"],
-            end=s["end"],
-            screenshot=s.get("screenshot"),
-            transcript=s.get("transcript")
-        ))
+        scenes.append(
+            Scene(
+                scene_id=s["scene_id"],
+                start=s["start"],
+                end=s["end"],
+                screenshot=s.get("screenshot"),
+                transcript=s.get("transcript"),
+            )
+        )
 
     return scenes

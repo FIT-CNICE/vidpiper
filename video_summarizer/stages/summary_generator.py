@@ -1,18 +1,17 @@
 """Summary generation stage using LLM providers."""
+
 import os
 import base64
 import time
 import random
-from typing import Dict, List, Any, Optional
 
 from ..core.pipeline import PipelineStage
-from ..core.data_classes import PipelineResult, Scene
+from ..core.data_classes import PipelineResult
 from ..llm_providers import (
-    LLMGenerator,
     AnthropicGenerator,
     OpenAIGenerator,
     GeminiGenerator,
-    get_available_llm_providers
+    get_available_llm_providers,
 )
 
 
@@ -24,27 +23,29 @@ class LLMSummaryGenerator(PipelineStage):
     based on availability and preference, with fallback mechanisms.
     """
 
-    def __init__(self, model: str = "gemini-2.0-flash",
-                 max_tokens: int = 2000, output_dir: str = "output",
-                 preferred_provider: str = "gemini"):
+    def __init__(
+        self,
+        model: str = "gemini-2.0-flash",
+        max_tokens: int = 2000,
+        output_dir: str = "output",
+        preferred_provider: str = "gemini",
+    ):
         self.max_tokens = max_tokens
         self.output_dir = output_dir  # Store the output directory
         self.summaries = {}  # Store individual scene summaries
-        self.previous_summary_context = ""  # Track previous summary for continuity
+        self.previous_summary_context = (
+            ""  # Track previous summary for continuity
+        )
         self.processed_scenes_count = 0  # Track number of processed scenes
 
         # Initialize all available LLM generators
         self.generators = {
-            "gemini": GeminiGenerator(
-                model,
-                max_tokens),
+            "gemini": GeminiGenerator(model, max_tokens),
             "anthropic": AnthropicGenerator(
-                "claude-3-7-sonnet-20250219",
-                max_tokens),
-            "openai": OpenAIGenerator(
-                "gpt-4o-2024-11-20",
-                max_tokens)
-                 }
+                "claude-3-7-sonnet-20250219", max_tokens
+            ),
+            "openai": OpenAIGenerator("gpt-4o-2024-11-20", max_tokens),
+        }
 
         # Set the preferred provider
         self.preferred_provider = preferred_provider.lower()
@@ -52,16 +53,19 @@ class LLMSummaryGenerator(PipelineStage):
         # Get available providers
         available_providers = get_available_llm_providers()
         self.available_generators = [
-            provider for provider, available in available_providers.items()
+            provider
+            for provider, available in available_providers.items()
             if available
         ]
 
         if not self.available_generators:
             raise ValueError(
-                "No LLM API keys found. Set at least one of ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY.")
+                "No LLM API keys found. Set at least one of ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY."
+            )
 
         print(
-            f"Available LLM providers: {', '.join(self.available_generators)}")
+            f"Available LLM providers: {', '.join(self.available_generators)}"
+        )
 
         # Set the active generator based on preference and availability
         if self.preferred_provider in self.available_generators:
@@ -70,22 +74,25 @@ class LLMSummaryGenerator(PipelineStage):
             self.active_provider = self.available_generators[0]
 
         print(
-            f"Using {self.active_provider.upper()} as the primary LLM provider")
+            f"Using {self.active_provider.upper()} as the primary LLM provider"
+        )
 
     def run(self, data: PipelineResult) -> PipelineResult:
         scenes = data.scenes
-        
+
         if not scenes:
             raise ValueError("No scenes to summarize")
-        
+
         # Ensure output directory exists and is set in the result
         if not data.output_dir:
             data.output_dir = self.output_dir
-            
+
         os.makedirs(data.output_dir, exist_ok=True)
         os.makedirs(os.path.join(data.output_dir, "screenshots"), exist_ok=True)
-            
-        print(f"Generating summaries with {self.active_provider.upper()} API for {len(scenes)} scenes...")
+
+        print(
+            f"Generating summaries with {self.active_provider.upper()} API for {len(scenes)} scenes..."
+        )
         complete_summary = "# Video Summary\n\n"
 
         for i, scene in enumerate(scenes):
@@ -96,7 +103,8 @@ class LLMSummaryGenerator(PipelineStage):
             end_time = scene.end
 
             print(
-                f"Processing scene {scene_id} ({start_time:.2f}s - {end_time:.2f}s) with {self.active_provider.upper()}...")
+                f"Processing scene {scene_id} ({start_time:.2f}s - {end_time:.2f}s) with {self.active_provider.upper()}..."
+            )
 
             # Format timestamp as MM:SS
             minutes, seconds = divmod(int(start_time), 60)
@@ -114,8 +122,14 @@ class LLMSummaryGenerator(PipelineStage):
             # Get summary for this scene using multimodal API with awareness of
             # previous content
             scene_summary = self._generate_scene_summary(
-                scene_id, screenshot_path, transcript, start_time, end_time,
-                i, len(scenes))
+                scene_id,
+                screenshot_path,
+                transcript,
+                start_time,
+                end_time,
+                i,
+                len(scenes),
+            )
 
             # Add this scene to the complete summary
             complete_summary += scene_heading
@@ -136,7 +150,8 @@ class LLMSummaryGenerator(PipelineStage):
 
             # Save the current state of the summary in the output directory
             in_progress_file = os.path.join(
-                data.output_dir, "summary_in_progress.md")
+                data.output_dir, "summary_in_progress.md"
+            )
             with open(in_progress_file, "w", encoding="utf-8") as f:
                 f.write(complete_summary)
 
@@ -148,20 +163,20 @@ class LLMSummaryGenerator(PipelineStage):
             summary_file = os.path.join(data.output_dir, f"{video_name}_sum.md")
             with open(summary_file, "w", encoding="utf-8") as f:
                 f.write(complete_summary)
-                
+
             # Add the summary file path to the result
             data.summary_file = summary_file
 
         # Add the complete summary to the result
         data.complete_summary = complete_summary
-        
+
         # Add metadata about the summary generation
         data.metadata["summary_generation"] = {
             "llm_provider": self.active_provider,
             "available_providers": self.available_generators,
             "tokens_per_scene": self.max_tokens,
         }
-        
+
         return data
 
     def _encode_image(self, image_path: str) -> str:
@@ -170,9 +185,15 @@ class LLMSummaryGenerator(PipelineStage):
             return base64.b64encode(img_file.read()).decode("utf-8")
 
     def _generate_scene_summary(
-            self, scene_id: int, screenshot_path: str, transcript: str,
-            start_time: float, end_time: float, scene_index: int,
-            total_scenes: int) -> str:
+        self,
+        scene_id: int,
+        screenshot_path: str,
+        transcript: str,
+        start_time: float,
+        end_time: float,
+        scene_index: int,
+        total_scenes: int,
+    ) -> str:
         """
         Generate a summary for a single scene using the selected LLM API
         with retry mechanism for handling API errors and fallback to alternative providers.
@@ -185,32 +206,36 @@ class LLMSummaryGenerator(PipelineStage):
         if scene_index == 0:
             # First scene - establish the topic
             context_directive = (
-                "As this is the first scene, " +
-                "establish the main topic and context of the presentation. " +
-                "If the image content does not look like part of a demo, " +
-                "presentation, or panel discussion, tell me using EXACTLY " +
-                "the following words: \"NO USEFUL CONTENT FOUND!\""
+                "As this is the first scene, "
+                + "establish the main topic and context of the presentation. "
+                + "If the image content does not look like part of a demo, "
+                + "presentation, or panel discussion, tell me using EXACTLY "
+                + 'the following words: "NO USEFUL CONTENT FOUND!"'
             )
         elif scene_index == total_scenes - 1:
             # Last scene - wrap up and connect to previous content
             context_directive = (
-                "This is the final scene. Connect it with previous " +
-                "content and provide closure on the topic. " +
-                "Previous summary context:"
-                f" \"{self.previous_summary_context}...\"")
+                "This is the final scene. Connect it with previous "
+                + "content and provide closure on the topic. "
+                + "Previous summary context:"
+                f' "{self.previous_summary_context}..."'
+            )
         else:
             # Middle scene - maintain continuity
             context_directive = (
-                "Connect this scene with the previous content for " +
-                "a cohesive summary. Previous summary context:"
-                f" \"{self.previous_summary_context}...\"")
+                "Connect this scene with the previous content for "
+                + "a cohesive summary. Previous summary context:"
+                f' "{self.previous_summary_context}..."'
+            )
 
         # Optimize transcript inclusion based on language
         if "你好" in transcript or "我们" in transcript or "这是" in transcript:
             # For Chinese content, use a shorter portion to reduce tokens
             transcript_preview = transcript
-            transcript_note = "Note: This appears to be primarily Chinese." + \
-                " Transcript might contain typos on technical jargons."
+            transcript_note = (
+                "Note: This appears to be primarily Chinese."
+                + " Transcript might contain typos on technical jargons."
+            )
         else:
             transcript_preview = transcript
             transcript_note = ""
@@ -227,12 +252,14 @@ class LLMSummaryGenerator(PipelineStage):
             "1. Key technical concepts from both the slide/demo and speaker's explanation\n"
             "2. Any relevant data, diagrams, or metrics with context from the transcript\n"
             "3. The main point of this segment, explaining technical terms in an intuitive yet rigorous way\n\n"
-            "Make your summary accessible to a general audience by explaining technical terms using everyday language, analogies, or simplified examples while maintaining technical accuracy.")
+            "Make your summary accessible to a general audience by explaining technical terms using everyday language, analogies, or simplified examples while maintaining technical accuracy."
+        )
 
         # Initialize providers list with active provider first, then others as
         # fallbacks
-        providers_to_try = [self.active_provider] + [p
-                                                     for p in self.available_generators if p != self.active_provider]
+        providers_to_try = [self.active_provider] + [
+            p for p in self.available_generators if p != self.active_provider
+        ]
 
         # Retry parameters
         max_retries = 3
@@ -249,11 +276,13 @@ class LLMSummaryGenerator(PipelineStage):
             while retry_count < max_retries:
                 try:
                     print(
-                        f"Attempting to generate summary for scene {scene_id} using {provider.upper()} (attempt {retry_count+1}/{max_retries})...")
+                        f"Attempting to generate summary for scene {scene_id} using {provider.upper()} (attempt {retry_count + 1}/{max_retries})..."
+                    )
 
                     # Generate content using the current provider
                     generated_text = generator.generate_content(
-                        user_prompt, base64_image)
+                        user_prompt, base64_image
+                    )
 
                     # Format headings consistently
                     generated_text = generated_text.replace("\n## ", "\n### ")
@@ -263,46 +292,63 @@ class LLMSummaryGenerator(PipelineStage):
                     # switching
                     if provider != self.active_provider:
                         print(
-                            f"Successfully generated content with fallback provider {provider.upper()}. " +
-                            f"Switching active provider from {self.active_provider.upper()} to {provider.upper()}")
+                            f"Successfully generated content with fallback provider {provider.upper()}. "
+                            + f"Switching active provider from {self.active_provider.upper()} to {provider.upper()}"
+                        )
                         self.active_provider = provider
 
                     print(
-                        f"Generated summary for scene {scene_id} using {provider.upper()}")
+                        f"Generated summary for scene {scene_id} using {provider.upper()}"
+                    )
                     return generated_text
 
                 except Exception as e:
                     retry_count += 1
                     error_str = str(e)
-                    error_msg = f"Error generating summary with {provider.upper()} for scene " + \
-                        f"{scene_id} (attempt {retry_count}/{max_retries}): {error_str}"
+                    error_msg = (
+                        f"Error generating summary with {provider.upper()} for scene "
+                        + f"{scene_id} (attempt {retry_count}/{max_retries}): {error_str}"
+                    )
                     print(error_msg)
 
                     # Check for overload or rate limit errors
                     is_overload = any(
                         phrase in error_str.lower()
-                        for phrase
-                        in
-                        ["overloaded", "rate limit", "429", "quota",
-                         "capacity"])
+                        for phrase in [
+                            "overloaded",
+                            "rate limit",
+                            "429",
+                            "quota",
+                            "capacity",
+                        ]
+                    )
 
                     if retry_count < max_retries:
                         # Exponential backoff with jitter
                         # Add random jitter between 0-0.5 seconds
                         jitter = random.uniform(0, 0.5)
                         # Use longer backoff for overload errors
-                        base_delay = retry_delay * 5 if is_overload else retry_delay
+                        base_delay = (
+                            retry_delay * 5 if is_overload else retry_delay
+                        )
                         sleep_time = (
-                            base_delay * (2 ** (retry_count - 1))) + jitter
+                            base_delay * (2 ** (retry_count - 1))
+                        ) + jitter
                         print(
-                            f"Retrying in {sleep_time:.2f} seconds..." +
-                            (" (Rate limit/overload detected)" if is_overload else ""))
+                            f"Retrying in {sleep_time:.2f} seconds..."
+                            + (
+                                " (Rate limit/overload detected)"
+                                if is_overload
+                                else ""
+                            )
+                        )
                         time.sleep(sleep_time)
                     else:
                         # All retries with current provider failed, try next
                         # provider
                         print(
-                            f"All attempts with {provider.upper()} failed. Trying next provider...")
+                            f"All attempts with {provider.upper()} failed. Trying next provider..."
+                        )
                         break
 
         # If we get here, all providers failed
@@ -311,7 +357,9 @@ class LLMSummaryGenerator(PipelineStage):
     def cleanup(self) -> None:
         """Clean up any resources used by this stage."""
         # Clean up the in-progress summary file if it exists
-        in_progress_file = os.path.join(self.output_dir, "summary_in_progress.md")
+        in_progress_file = os.path.join(
+            self.output_dir, "summary_in_progress.md"
+        )
         if os.path.exists(in_progress_file):
             try:
                 os.remove(in_progress_file)
@@ -321,14 +369,15 @@ class LLMSummaryGenerator(PipelineStage):
 
 
 def create_summary_generator(
-        model: str = "gemini-2.0-flash",
-        max_tokens: int = 2000, 
-        output_dir: str = "output",
-        preferred_provider: str = "gemini") -> LLMSummaryGenerator:
+    model: str = "gemini-2.0-flash",
+    max_tokens: int = 2000,
+    output_dir: str = "output",
+    preferred_provider: str = "gemini",
+) -> LLMSummaryGenerator:
     """Factory function to create a summary generator stage."""
     return LLMSummaryGenerator(
         model=model,
         max_tokens=max_tokens,
         output_dir=output_dir,
-        preferred_provider=preferred_provider
+        preferred_provider=preferred_provider,
     )

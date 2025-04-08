@@ -1,4 +1,5 @@
 """Google's Gemini API provider implementation."""
+
 import os
 from .base import LLMGenerator
 
@@ -6,13 +7,13 @@ from .base import LLMGenerator
 class GeminiGenerator(LLMGenerator):
     """Generator using Google's Gemini API."""
 
-    def __init__(self, model: str = "gemini-2.0-flash",
-                max_tokens: int = 2000):
+    def __init__(self, model: str = "gemini-2.0-flash", max_tokens: int = 2000):
         try:
             import google.generativeai as genai
         except ImportError:
             raise ImportError(
-                "The google-generativeai package is required. Install it with 'pip install google-generativeai'.")
+                "The google-generativeai package is required. Install it with 'pip install google-generativeai'."
+            )
 
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.model = model
@@ -20,6 +21,7 @@ class GeminiGenerator(LLMGenerator):
         self.genai = None
         if self.api_key:
             import google.generativeai as genai
+
             genai.configure(api_key=self.api_key)
             self.genai = genai
 
@@ -40,7 +42,8 @@ class GeminiGenerator(LLMGenerator):
             "Identify key technical concepts, data points, and main arguments from both the visuals "
             "and the transcript, explaining complex ideas using analogies or simplified examples when appropriate. "
             "Create logically connected summaries that flow naturally from previous scenes while ensuring "
-            "technical content is understandable to a broad audience.")
+            "technical content is understandable to a broad audience."
+        )
 
         if image_data and self.model == "gemini-2.0-flash":
             import base64

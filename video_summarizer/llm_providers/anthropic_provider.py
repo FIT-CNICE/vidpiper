@@ -1,4 +1,5 @@
 """Anthropic Claude API provider implementation."""
+
 import os
 from .base import LLMGenerator
 
@@ -6,13 +7,15 @@ from .base import LLMGenerator
 class AnthropicGenerator(LLMGenerator):
     """Generator using Anthropic's Claude API."""
 
-    def __init__(self, model: str = "claude-3-7-sonnet-20250219",
-                max_tokens: int = 2000):
+    def __init__(
+        self, model: str = "claude-3-7-sonnet-20250219", max_tokens: int = 2000
+    ):
         try:
             import anthropic
         except ImportError:
             raise ImportError(
-                "The anthropic package is required. Install it with 'pip install anthropic'.")
+                "The anthropic package is required. Install it with 'pip install anthropic'."
+            )
 
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
         self.model = model
@@ -38,7 +41,8 @@ class AnthropicGenerator(LLMGenerator):
             "Identify key technical concepts, data points, and main arguments from both the visuals "
             "and the transcript, explaining complex ideas using analogies or simplified examples when appropriate. "
             "Create logically connected summaries that flow naturally from previous scenes while ensuring "
-            "technical content is understandable to a broad audience.")
+            "technical content is understandable to a broad audience."
+        )
 
         if image_data:
             message = self.client.messages.create(
@@ -54,28 +58,20 @@ class AnthropicGenerator(LLMGenerator):
                                 "source": {
                                     "type": "base64",
                                     "media_type": "image/jpeg",
-                                    "data": image_data
-                                }
+                                    "data": image_data,
+                                },
                             },
-                            {
-                                "type": "text",
-                                "text": prompt
-                            }
-                        ]
+                            {"type": "text", "text": prompt},
+                        ],
                     }
-                ]
+                ],
             )
         else:
             message = self.client.messages.create(
                 model=self.model,
                 max_tokens=min(self.max_tokens, 3000),
                 system=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
+                messages=[{"role": "user", "content": prompt}],
             )
 
         return message.content[0].text

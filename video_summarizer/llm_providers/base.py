@@ -1,4 +1,5 @@
 """Base classes for LLM providers."""
+
 from abc import ABC, abstractmethod
 import os
 
@@ -15,7 +16,7 @@ class LLMGenerator(ABC):
     def is_available(self) -> bool:
         """Check if this LLM API is available for use."""
         pass
-    
+
     @property
     def name(self) -> str:
         """Get the name of this LLM provider."""
@@ -25,12 +26,12 @@ class LLMGenerator(ABC):
 def get_available_llm_providers():
     """
     Return a dictionary of available LLM providers based on environment variables.
-    
+
     Returns:
         dict: A dictionary with provider names as keys and availability as values
     """
     return {
         "anthropic": os.getenv("ANTHROPIC_API_KEY") is not None,
         "openai": os.getenv("OPENAI_API_KEY") is not None,
-        "gemini": os.getenv("GEMINI_API_KEY") is not None
+        "gemini": os.getenv("GEMINI_API_KEY") is not None,
     }

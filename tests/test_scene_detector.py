@@ -38,12 +38,14 @@ def test_scene_detector(test_video_path, test_output_dir):
             # Much higher downscale factor for testing - uses less memory and runs faster
             downscale_factor=128,
             skip_start=0.0,  # Video is short, don't skip anything
-            skip_end=0.0     # Video is short, don't skip anything
+            skip_end=0.0,  # Video is short, don't skip anything
         )
 
         # Create initial pipeline data
-        initial_data = PipelineResult(video_path=os.path.abspath(test_video_path))
-        
+        initial_data = PipelineResult(
+            video_path=os.path.abspath(test_video_path)
+        )
+
         # Run the detector
         result = detector.run(initial_data)
         scenes = result.scenes
@@ -52,7 +54,8 @@ def test_scene_detector(test_video_path, test_output_dir):
         print(f"Detected {len(scenes)} scenes:")
         for i, scene in enumerate(scenes[:5]):  # Print first 5 scenes
             print(
-                f"  Scene {scene.scene_id}: {scene.start:.2f}s - {scene.end:.2f}s")
+                f"  Scene {scene.scene_id}: {scene.start:.2f}s - {scene.end:.2f}s"
+            )
 
         if len(scenes) > 5:
             print(f"  ... and {len(scenes) - 5} more scenes")
@@ -60,28 +63,28 @@ def test_scene_detector(test_video_path, test_output_dir):
         # Convert scenes to dicts for JSON serialization (deprecated approach, now using PipelineResult.to_dict())
         scene_dicts = []
         for scene in scenes:
-            scene_dicts.append({
-                "scene_id": scene.scene_id,
-                "start": scene.start,
-                "end": scene.end
-            })
+            scene_dicts.append(
+                {
+                    "scene_id": scene.scene_id,
+                    "start": scene.start,
+                    "end": scene.end,
+                }
+            )
 
         # Save results to a JSON file
-        result_file = os.path.join(
-            test_output_dir,
-            f"scenes_test.json")
-        with open(result_file, 'w') as f:
+        result_file = os.path.join(test_output_dir, "scenes_test.json")
+        with open(result_file, "w") as f:
             json.dump(scene_dicts, f, indent=2)
 
         print(f"Results saved to {result_file}")
 
         # Also save using the new PipelineResult serialization
         new_result_file = os.path.join(
-            test_output_dir,
-            f"scenes_test_pipeline_result.json")
-        with open(new_result_file, 'w') as f:
+            test_output_dir, "scenes_test_pipeline_result.json"
+        )
+        with open(new_result_file, "w") as f:
             json.dump(result.to_dict(), f, indent=2)
-            
+
         print(f"Full pipeline result saved to {new_result_file}")
 
 

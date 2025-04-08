@@ -5,7 +5,6 @@ This script tests the different generators (Anthropic, OpenAI, Gemini) and the m
 """
 
 import os
-import json
 import pytest
 from unittest.mock import patch, MagicMock
 import sys
@@ -16,10 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from video_summarizer.core import Scene, PipelineResult
 from video_summarizer.llm_providers import (
-    LLMGenerator,
     AnthropicGenerator,
     OpenAIGenerator,
-    GeminiGenerator
+    GeminiGenerator,
 )
 from video_summarizer.stages import LLMSummaryGenerator
 
@@ -68,7 +66,9 @@ class TestAnthropicGenerator:
                 generator = AnthropicGenerator()
 
                 # Test with image
-                result = generator.generate_content("Test prompt", "test_image_data")
+                result = generator.generate_content(
+                    "Test prompt", "test_image_data"
+                )
 
                 # Verify result
                 assert result == "Generated text from Anthropic"
@@ -166,7 +166,9 @@ class TestOpenAIGenerator:
                 generator = OpenAIGenerator()
 
                 # Test with image
-                result = generator.generate_content("Test prompt", "test_image_data")
+                result = generator.generate_content(
+                    "Test prompt", "test_image_data"
+                )
 
                 # Verify result
                 assert result == "Generated text from OpenAI"
@@ -176,7 +178,9 @@ class TestOpenAIGenerator:
                 call_args = mock_create.call_args[1]
                 assert call_args["model"] == "gpt-4o-2024-11-20"
                 assert call_args["max_tokens"] == 2000
-                assert len(call_args["messages"]) == 2  # System message and user message
+                assert (
+                    len(call_args["messages"]) == 2
+                )  # System message and user message
 
                 # Verify the user message has both text and image
                 user_message = call_args["messages"][1]
@@ -185,7 +189,10 @@ class TestOpenAIGenerator:
                 assert user_message["content"][0]["type"] == "text"
                 assert user_message["content"][0]["text"] == "Test prompt"
                 assert user_message["content"][1]["type"] == "image_url"
-                assert "data:image/jpeg;base64,test_image_data" in user_message["content"][1]["image_url"]["url"]
+                assert (
+                    "data:image/jpeg;base64,test_image_data"
+                    in user_message["content"][1]["image_url"]["url"]
+                )
 
     def test_generate_content_text_only(self):
         """Test generating content with text only."""
@@ -281,7 +288,9 @@ class TestGeminiGenerator:
                 assert result == "Generated text from Gemini"
 
                 # Verify correct API call
-                mock_genai.GenerativeModel.assert_called_once_with("gemini-2.0-flash-lite")
+                mock_genai.GenerativeModel.assert_called_once_with(
+                    "gemini-2.0-flash-lite"
+                )
                 mock_model.generate_content.assert_called_once()
                 # The generate_content is called with system prompt and user prompt
                 assert len(mock_model.generate_content.call_args[0][0]) == 2
@@ -293,23 +302,37 @@ class TestLLMSummaryGenerator:
     def test_initialization_with_preferences(self):
         """Test initialization with different provider preferences."""
         # All providers available
-        with patch("video_summarizer.llm_providers.get_available_llm_providers",
-                 return_value={"anthropic": True, "openai": True, "gemini": True}):
+        with patch(
+            "video_summarizer.llm_providers.get_available_llm_providers",
+            return_value={"anthropic": True, "openai": True, "gemini": True},
+        ):
             # Mock generator initializations
             with patch("video_summarizer.llm_providers.AnthropicGenerator"):
                 with patch("video_summarizer.llm_providers.OpenAIGenerator"):
-                    with patch("video_summarizer.llm_providers.GeminiGenerator"):
+                    with patch(
+                        "video_summarizer.llm_providers.GeminiGenerator"
+                    ):
                         # Test anthropic preference
-                        generator = LLMSummaryGenerator(preferred_provider="anthropic")
+                        generator = LLMSummaryGenerator(
+                            preferred_provider="anthropic"
+                        )
                         assert generator.active_provider == "anthropic"
-                        assert set(generator.available_generators) == {"anthropic", "openai", "gemini"}
+                        assert set(generator.available_generators) == {
+                            "anthropic",
+                            "openai",
+                            "gemini",
+                        }
 
                         # Test openai preference
-                        generator = LLMSummaryGenerator(preferred_provider="openai")
+                        generator = LLMSummaryGenerator(
+                            preferred_provider="openai"
+                        )
                         assert generator.active_provider == "openai"
 
                         # Test gemini preference
-                        generator = LLMSummaryGenerator(preferred_provider="gemini")
+                        generator = LLMSummaryGenerator(
+                            preferred_provider="gemini"
+                        )
                         assert generator.active_provider == "gemini"
 
     def test_initialization_with_limited_availability(self):
@@ -323,36 +346,57 @@ class TestLLMSummaryGenerator:
     def test_generate_scene_summary(self):
         """Test the _generate_scene_summary method."""
         # Mock available providers
-        with patch("video_summarizer.llm_providers.get_available_llm_providers",
-                 return_value={"anthropic": True, "openai": True, "gemini": False}):
+        with patch(
+            "video_summarizer.llm_providers.get_available_llm_providers",
+            return_value={"anthropic": True, "openai": True, "gemini": False},
+        ):
             # Create mocks for content generation
             mock_anthropic_generator = MagicMock()
-            mock_anthropic_generator.generate_content.return_value = "Summary from Anthropic"
+            mock_anthropic_generator.generate_content.return_value = (
+                "Summary from Anthropic"
+            )
             mock_anthropic_generator.is_available.return_value = True
 
             mock_openai_generator = MagicMock()
-            mock_openai_generator.generate_content.return_value = "Summary from OpenAI"
+            mock_openai_generator.generate_content.return_value = (
+                "Summary from OpenAI"
+            )
             mock_openai_generator.is_available.return_value = True
 
             mock_gemini_generator = MagicMock()
             mock_gemini_generator.is_available.return_value = False
 
             # Create the generator with mocked providers
-            with patch("video_summarizer.llm_providers.AnthropicGenerator", return_value=mock_anthropic_generator):
-                with patch("video_summarizer.llm_providers.OpenAIGenerator", return_value=mock_openai_generator):
-                    with patch("video_summarizer.llm_providers.GeminiGenerator", return_value=mock_gemini_generator):
-                        generator = LLMSummaryGenerator(preferred_provider="anthropic")
+            with patch(
+                "video_summarizer.llm_providers.AnthropicGenerator",
+                return_value=mock_anthropic_generator,
+            ):
+                with patch(
+                    "video_summarizer.llm_providers.OpenAIGenerator",
+                    return_value=mock_openai_generator,
+                ):
+                    with patch(
+                        "video_summarizer.llm_providers.GeminiGenerator",
+                        return_value=mock_gemini_generator,
+                    ):
+                        generator = LLMSummaryGenerator(
+                            preferred_provider="anthropic"
+                        )
                         # Directly set up generators to ensure test works
                         generator.generators = {
                             "anthropic": mock_anthropic_generator,
                             "openai": mock_openai_generator,
-                            "gemini": mock_gemini_generator
+                            "gemini": mock_gemini_generator,
                         }
                         generator.active_provider = "anthropic"
                         generator.available_generators = ["anthropic", "openai"]
 
                         # Mock the _encode_image method
-                        with patch.object(generator, "_encode_image", return_value="encoded_image"):
+                        with patch.object(
+                            generator,
+                            "_encode_image",
+                            return_value="encoded_image",
+                        ):
                             # Test successful generation with primary provider
                             result = generator._generate_scene_summary(
                                 scene_id=1,
@@ -361,7 +405,7 @@ class TestLLMSummaryGenerator:
                                 start_time=0.0,
                                 end_time=10.0,
                                 scene_index=0,
-                                total_scenes=3
+                                total_scenes=3,
                             )
 
                             # Verify the result
@@ -371,29 +415,49 @@ class TestLLMSummaryGenerator:
     def test_generate_scene_summary_fallback(self):
         """Test fallback to another provider when the primary provider fails."""
         # Mock available providers
-        with patch("video_summarizer.llm_providers.get_available_llm_providers",
-                 return_value={"anthropic": True, "openai": True, "gemini": False}):
+        with patch(
+            "video_summarizer.llm_providers.get_available_llm_providers",
+            return_value={"anthropic": True, "openai": True, "gemini": False},
+        ):
             # Create mocks for content generation
             mock_anthropic_generator = MagicMock()
-            mock_anthropic_generator.generate_content.side_effect = Exception("Anthropic error")
+            mock_anthropic_generator.generate_content.side_effect = Exception(
+                "Anthropic error"
+            )
 
             mock_openai_generator = MagicMock()
-            mock_openai_generator.generate_content.return_value = "Summary from OpenAI"
+            mock_openai_generator.generate_content.return_value = (
+                "Summary from OpenAI"
+            )
 
             # Create the generator with mocked providers
-            with patch("video_summarizer.llm_providers.AnthropicGenerator", return_value=mock_anthropic_generator):
-                with patch("video_summarizer.llm_providers.OpenAIGenerator", return_value=mock_openai_generator):
-                    with patch("video_summarizer.llm_providers.GeminiGenerator"):
-                        generator = LLMSummaryGenerator(preferred_provider="anthropic")
+            with patch(
+                "video_summarizer.llm_providers.AnthropicGenerator",
+                return_value=mock_anthropic_generator,
+            ):
+                with patch(
+                    "video_summarizer.llm_providers.OpenAIGenerator",
+                    return_value=mock_openai_generator,
+                ):
+                    with patch(
+                        "video_summarizer.llm_providers.GeminiGenerator"
+                    ):
+                        generator = LLMSummaryGenerator(
+                            preferred_provider="anthropic"
+                        )
                         generator.generators = {
                             "anthropic": mock_anthropic_generator,
-                            "openai": mock_openai_generator
+                            "openai": mock_openai_generator,
                         }
                         generator.available_generators = ["anthropic", "openai"]
                         generator.active_provider = "anthropic"
 
                         # Mock the _encode_image method and sleep to avoid actual waiting
-                        with patch.object(generator, "_encode_image", return_value="encoded_image"):
+                        with patch.object(
+                            generator,
+                            "_encode_image",
+                            return_value="encoded_image",
+                        ):
                             with patch("time.sleep"):
                                 # Test fallback when primary provider fails
                                 result = generator._generate_scene_summary(
@@ -403,12 +467,15 @@ class TestLLMSummaryGenerator:
                                     start_time=0.0,
                                     end_time=10.0,
                                     scene_index=0,
-                                    total_scenes=3
+                                    total_scenes=3,
                                 )
 
                                 # Verify the result
                                 assert result == "Summary from OpenAI"
-                                assert mock_anthropic_generator.generate_content.call_count == 3  # Should retry 3 times
+                                assert (
+                                    mock_anthropic_generator.generate_content.call_count
+                                    == 3
+                                )  # Should retry 3 times
                                 mock_openai_generator.generate_content.assert_called_once()
 
                                 # Check that active provider switched
@@ -422,39 +489,49 @@ class TestLLMSummaryGenerator:
             start=0.0,
             end=10.0,
             screenshot="/path/to/screenshot.jpg",
-            transcript="Test transcript"
+            transcript="Test transcript",
         )
 
         # Create pipeline result input
         input_data = PipelineResult(
             video_path="test_video.mp4",
             scenes=[scene],
-            output_dir="/tmp/test_output"
+            output_dir="/tmp/test_output",
         )
 
         # Mock the generator initialization
-        with patch("video_summarizer.llm_providers.get_available_llm_providers",
-                 return_value={"anthropic": True, "openai": False, "gemini": False}):
+        with patch(
+            "video_summarizer.llm_providers.get_available_llm_providers",
+            return_value={"anthropic": True, "openai": False, "gemini": False},
+        ):
             # Mock generator initialization
-            with patch("video_summarizer.llm_providers.AnthropicGenerator") as mock_anthropic:
+            with patch(
+                "video_summarizer.llm_providers.AnthropicGenerator"
+            ) as mock_anthropic:
                 with patch("video_summarizer.llm_providers.OpenAIGenerator"):
-                    with patch("video_summarizer.llm_providers.GeminiGenerator"):
+                    with patch(
+                        "video_summarizer.llm_providers.GeminiGenerator"
+                    ):
                         # Setup mock anthropic generator
                         mock_instance = MagicMock()
-                        mock_instance.generate_content.return_value = "Test summary"
+                        mock_instance.generate_content.return_value = (
+                            "Test summary"
+                        )
                         mock_instance.is_available.return_value = True
                         mock_anthropic.return_value = mock_instance
 
                         # Create the generator
-                        with patch.object(LLMSummaryGenerator, "_encode_image", return_value="encoded_image"):
+                        with patch.object(
+                            LLMSummaryGenerator,
+                            "_encode_image",
+                            return_value="encoded_image",
+                        ):
                             generator = LLMSummaryGenerator(
                                 output_dir="/tmp/test_output"
                             )
 
                             # Directly set up generators to ensure test works
-                            generator.generators = {
-                                "anthropic": mock_instance
-                            }
+                            generator.generators = {"anthropic": mock_instance}
                             generator.active_provider = "anthropic"
                             generator.available_generators = ["anthropic"]
 
@@ -466,8 +543,14 @@ class TestLLMSummaryGenerator:
 
                                     # Verify the result includes proper formatting
                                     assert result.complete_summary is not None
-                                    assert "# Video Summary" in result.complete_summary
-                                    assert "Test summary" in result.complete_summary
+                                    assert (
+                                        "# Video Summary"
+                                        in result.complete_summary
+                                    )
+                                    assert (
+                                        "Test summary"
+                                        in result.complete_summary
+                                    )
 
 
 def load_test_scene():
@@ -478,7 +561,7 @@ def load_test_scene():
         start=0.0,
         end=10.0,
         screenshot=None,  # Mock generator will handle this
-        transcript="This is a test transcript for the LLM generator tests."
+        transcript="This is a test transcript for the LLM generator tests.",
     )
     return scene
 
