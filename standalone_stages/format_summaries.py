@@ -25,8 +25,8 @@ from typing import Optional
 # NOTE: This script provides the same functionality as running:
 # python summerizer_cli.py --run-mode format
 
-from video_summarizer.stages import create_summary_formatter
-from video_summarizer.core.data_classes import PipelineResult
+from vidpiper.stages import create_summary_formatter
+from vidpiper.core.data_classes import PipelineResult
 
 
 def process_file(file_path: str, output_dir: Optional[str] = None) -> str:

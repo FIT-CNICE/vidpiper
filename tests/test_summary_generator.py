@@ -14,8 +14,8 @@ from pathlib import Path
 # Add the parent directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from video_summarizer.core import Scene, PipelineResult
-from video_summarizer.stages import create_summary_generator
+from vidpiper.core import Scene, PipelineResult
+from vidpiper.stages import create_summary_generator
 
 
 def test_summary_generator(

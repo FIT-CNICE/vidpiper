@@ -13,13 +13,13 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from video_summarizer.core import Scene, PipelineResult
-from video_summarizer.llm_providers import (
+from vidpiper.core import Scene, PipelineResult
+from vidpiper.llm_providers import (
     AnthropicGenerator,
     OpenAIGenerator,
     GeminiGenerator,
 )
-from video_summarizer.stages import LLMSummaryGenerator
+from vidpiper.stages import LLMSummaryGenerator
 
 
 class TestAnthropicGenerator:
@@ -303,15 +303,13 @@ class TestLLMSummaryGenerator:
         """Test initialization with different provider preferences."""
         # All providers available
         with patch(
-            "video_summarizer.llm_providers.get_available_llm_providers",
+            "vidpiper.llm_providers.get_available_llm_providers",
             return_value={"anthropic": True, "openai": True, "gemini": True},
         ):
             # Mock generator initializations
-            with patch("video_summarizer.llm_providers.AnthropicGenerator"):
-                with patch("video_summarizer.llm_providers.OpenAIGenerator"):
-                    with patch(
-                        "video_summarizer.llm_providers.GeminiGenerator"
-                    ):
+            with patch("vidpiper.llm_providers.AnthropicGenerator"):
+                with patch("vidpiper.llm_providers.OpenAIGenerator"):
+                    with patch("vidpiper.llm_providers.GeminiGenerator"):
                         # Test anthropic preference
                         generator = LLMSummaryGenerator(
                             preferred_provider="anthropic"
@@ -347,7 +345,7 @@ class TestLLMSummaryGenerator:
         """Test the _generate_scene_summary method."""
         # Mock available providers
         with patch(
-            "video_summarizer.llm_providers.get_available_llm_providers",
+            "vidpiper.llm_providers.get_available_llm_providers",
             return_value={"anthropic": True, "openai": True, "gemini": False},
         ):
             # Create mocks for content generation
@@ -368,15 +366,15 @@ class TestLLMSummaryGenerator:
 
             # Create the generator with mocked providers
             with patch(
-                "video_summarizer.llm_providers.AnthropicGenerator",
+                "vidpiper.llm_providers.AnthropicGenerator",
                 return_value=mock_anthropic_generator,
             ):
                 with patch(
-                    "video_summarizer.llm_providers.OpenAIGenerator",
+                    "vidpiper.llm_providers.OpenAIGenerator",
                     return_value=mock_openai_generator,
                 ):
                     with patch(
-                        "video_summarizer.llm_providers.GeminiGenerator",
+                        "vidpiper.llm_providers.GeminiGenerator",
                         return_value=mock_gemini_generator,
                     ):
                         generator = LLMSummaryGenerator(
@@ -416,7 +414,7 @@ class TestLLMSummaryGenerator:
         """Test fallback to another provider when the primary provider fails."""
         # Mock available providers
         with patch(
-            "video_summarizer.llm_providers.get_available_llm_providers",
+            "vidpiper.llm_providers.get_available_llm_providers",
             return_value={"anthropic": True, "openai": True, "gemini": False},
         ):
             # Create mocks for content generation
@@ -432,16 +430,14 @@ class TestLLMSummaryGenerator:
 
             # Create the generator with mocked providers
             with patch(
-                "video_summarizer.llm_providers.AnthropicGenerator",
+                "vidpiper.llm_providers.AnthropicGenerator",
                 return_value=mock_anthropic_generator,
             ):
                 with patch(
-                    "video_summarizer.llm_providers.OpenAIGenerator",
+                    "vidpiper.llm_providers.OpenAIGenerator",
                     return_value=mock_openai_generator,
                 ):
-                    with patch(
-                        "video_summarizer.llm_providers.GeminiGenerator"
-                    ):
+                    with patch("vidpiper.llm_providers.GeminiGenerator"):
                         generator = LLMSummaryGenerator(
                             preferred_provider="anthropic"
                         )
@@ -501,17 +497,15 @@ class TestLLMSummaryGenerator:
 
         # Mock the generator initialization
         with patch(
-            "video_summarizer.llm_providers.get_available_llm_providers",
+            "vidpiper.llm_providers.get_available_llm_providers",
             return_value={"anthropic": True, "openai": False, "gemini": False},
         ):
             # Mock generator initialization
             with patch(
-                "video_summarizer.llm_providers.AnthropicGenerator"
+                "vidpiper.llm_providers.AnthropicGenerator"
             ) as mock_anthropic:
-                with patch("video_summarizer.llm_providers.OpenAIGenerator"):
-                    with patch(
-                        "video_summarizer.llm_providers.GeminiGenerator"
-                    ):
+                with patch("vidpiper.llm_providers.OpenAIGenerator"):
+                    with patch("vidpiper.llm_providers.GeminiGenerator"):
                         # Setup mock anthropic generator
                         mock_instance = MagicMock()
                         mock_instance.generate_content.return_value = (

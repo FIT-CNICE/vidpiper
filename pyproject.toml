@@ -1,5 +1,5 @@
 [project]
-name = "vid-agent"
+name = "vidpiper"
 version = "0.1.0"
 description = "AI agent for summarizing webinar videos"
 authors = [

@@ -11,8 +11,8 @@ import sys
 import json
 import argparse
 
-from video_summarizer.core import PipelineResult
-from video_summarizer.stages import create_summary_generator
+from vidpiper.core import PipelineResult
+from vidpiper.stages import create_summary_generator
 
 # NOTE: This script provides the same functionality as running:
 # python summerizer_cli.py --run-mode summarize

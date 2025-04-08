@@ -12,8 +12,8 @@ from pathlib import Path
 # Add the parent directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from video_summarizer.core import PipelineResult
-from video_summarizer.stages import create_scene_detector
+from vidpiper.core import PipelineResult
+from vidpiper.stages import create_scene_detector
 
 
 def test_scene_detector(test_video_path, test_output_dir):

@@ -11,8 +11,8 @@ import sys
 import json
 import argparse
 
-from video_summarizer.core import PipelineResult
-from video_summarizer.stages import create_scene_detector
+from vidpiper.core import PipelineResult
+from vidpiper.stages import create_scene_detector
 
 # NOTE: This script provides the same functionality as running:
 # python summerizer_cli.py <video_path> --run-mode detect

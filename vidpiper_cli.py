@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Video Summarizer CLI
+VidPiper CLI
 
 This script provides a command-line interface for summarizing videos
 using the video_summarizer package. It allows for running the entire pipeline

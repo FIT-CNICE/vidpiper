@@ -1,6 +1,6 @@
-# Video Summarizer
+# FIT VidPiper
 
-A modular pipeline for generating text summaries of video content with screenshots and transcripts.
+A modular pipeline for generating text summaries of video webinar content with screenshots and transcripts.
 
 ## Features
 
@@ -55,10 +55,10 @@ Run the complete pipeline with the CLI tool:
 
 ```bash
 # Basic usage
-python vid_summerizer_cli.py /path/to/video.mp4
+python vidpiper_cli.py /path/to/video.mp4
 
 # With options
-python vid_summerizer_cli.py /path/to/video.mp4 \
+python vidpiper_cli.py /path/to/video.mp4 \
   --output-dir my_output \
   --threshold 30.0 \
   --skip-start 60.0 \
@@ -68,9 +68,9 @@ python vid_summerizer_cli.py /path/to/video.mp4 \
 
 ### Individual Stages
 
-The individual stages can be run using the standalone scripts located in the `standalone_stages` directory, or by using the `summerizer_cli.py` script with the `--run-mode` option.
+The individual stages can be run using the standalone scripts located in the `standalone_stages` directory, or by using the `vidpiper_cli.py` script with the `--run-mode` option.
 
-Using the standalone scripts provides a simpler interface for running individual stages, while using the `summerizer_cli.py` script allows for running the entire pipeline or individual stages with more advanced options.
+Using the standalone scripts provides a simpler interface for running individual stages, while using the `vidpiper_cli.py` script allows for running the entire pipeline or individual stages with more advanced options.
 
 1. Scene Detection:
 
@@ -84,8 +84,8 @@ python standalone_stages/detect_scenes.py /path/to/video.mp4 \
 or
 
 ```bash
-# Detect scenes using summerizer_cli.py
-python vid_summerizer_cli.py /path/to/video.mp4 --run-mode detect --threshold 35.0 --skip-start 60.0
+# Detect scenes using vidpiper_cli.py
+python vidpiper_cli.py /path/to/video.mp4 --run-mode detect --threshold 35.0 --skip-start 60.0
 ```
 
 2. Scene Processing:
@@ -100,8 +100,8 @@ python standalone_stages/process_scenes.py \
 or
 
 ```bash
-# Process scenes using summerizer_cli.py
-python vid_summerizer_cli.py --run-mode process --input-file video_output/detected_scenes.json --use-whisper
+# Process scenes using vidpiper_cli.py
+python vidpiper_cli.py --run-mode process --input-file video_output/detected_scenes.json --use-whisper
 ```
 
 3. Summary Generation:
@@ -116,8 +116,8 @@ python standalone_stages/generate_summary.py \
 or
 
 ```bash
-# Generate summary using summerizer_cli.py
-python vid_summerizer_cli.py --run-mode summarize --input-file video_output/processed_scenes.json --llm-provider gemini
+# Generate summary using vidpiper_cli.py
+python vidpiper_cli.py --run-mode summarize --input-file video_output/processed_scenes.json --llm-provider gemini
 ```
 
 ### Custom Pipelines
@@ -125,8 +125,8 @@ python vid_summerizer_cli.py --run-mode summarize --input-file video_output/proc
 Create custom pipelines by extending the base classes:
 
 ```python
-from video_summarizer.core import Pipeline, PipelineStage, PipelineResult
-from video_summarizer.stages import create_scene_detector, create_scene_processor
+from vidpiper.core import Pipeline, PipelineStage, PipelineResult
+from vidpiper.stages import create_scene_detector, create_scene_processor
 
 # Create a custom stage
 class MyCustomStage(PipelineStage):
@@ -149,7 +149,7 @@ See `custom_pipeline_example.py` for a complete example of a custom pipeline.
 ## Module Structure
 
 ```
-video_summarizer/
+vidpiper/
   ├── core/                       # Core pipeline components
   │   ├── data_classes.py         # Data classes for pipeline stages
   │   └── pipeline.py             # Pipeline infrastructure

@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from video_summarizer.core import Scene
+from vidpiper.core import Scene
 
 
 def create_mock_scene(scene_id, start_time, end_time, test_output_dir):

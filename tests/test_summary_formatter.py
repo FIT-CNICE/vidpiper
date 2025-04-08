@@ -5,8 +5,8 @@ import pytest
 import tempfile
 import shutil
 
-from video_summarizer.core.data_classes import PipelineResult
-from video_summarizer.stages import create_summary_formatter
+from vidpiper.core.data_classes import PipelineResult
+from vidpiper.stages import create_summary_formatter
 
 
 @pytest.fixture
@@ -74,11 +74,11 @@ taxonomy: Technology > Software > Product Demo
 
     # Apply the mock
     monkeypatch.setattr(
-        "video_summarizer.llm_providers.GeminiGenerator.generate_content",
+        "vidpiper.llm_providers.GeminiGenerator.generate_content",
         mock_generate_content,
     )
     monkeypatch.setattr(
-        "video_summarizer.llm_providers.get_available_llm_providers",
+        "vidpiper.llm_providers.get_available_llm_providers",
         lambda: {"gemini": True, "anthropic": False, "openai": False},
     )
 
@@ -160,11 +160,11 @@ taxonomy: Test > Example > Demo
 
     # Apply the mock
     monkeypatch.setattr(
-        "video_summarizer.llm_providers.GeminiGenerator.generate_content",
+        "vidpiper.llm_providers.GeminiGenerator.generate_content",
         mock_generate_content,
     )
     monkeypatch.setattr(
-        "video_summarizer.llm_providers.get_available_llm_providers",
+        "vidpiper.llm_providers.get_available_llm_providers",
         lambda: {"gemini": True, "anthropic": False, "openai": False},
     )
 
@@ -214,7 +214,7 @@ def test_link_expansion(test_dir, monkeypatch):
 
     # Apply the mock
     monkeypatch.setattr(
-        "video_summarizer.stages.summary_formatter.SummaryFormatter._expand_links",
+        "vidpiper.stages.summary_formatter.SummaryFormatter._expand_links",
         mock_expand_links,
     )
 
@@ -226,11 +226,11 @@ def test_link_expansion(test_dir, monkeypatch):
             return "---BEGIN MARP DECK---\nLinks were NOT expanded\n---END MARP DECK---"
 
     monkeypatch.setattr(
-        "video_summarizer.llm_providers.GeminiGenerator.generate_content",
+        "vidpiper.llm_providers.GeminiGenerator.generate_content",
         mock_generate_content,
     )
     monkeypatch.setattr(
-        "video_summarizer.llm_providers.get_available_llm_providers",
+        "vidpiper.llm_providers.get_available_llm_providers",
         lambda: {"gemini": True, "anthropic": False, "openai": False},
     )
 
