@@ -15,7 +15,7 @@ from vidpiper.core import PipelineResult
 from vidpiper.stages import create_summary_generator
 
 # NOTE: This script provides the same functionality as running:
-# python summerizer_cli.py --run-mode summarize
+# python vidpiper_cli.py --run-mode summarize
 
 
 def parse_args():

@@ -15,7 +15,7 @@ from vidpiper.core import PipelineResult
 from vidpiper.stages import create_scene_processor
 
 # NOTE: This script provides the same functionality as running:
-# python summerizer_cli.py --run-mode process
+# python vidpiper_cli.py --run-mode process
 
 
 def parse_args():

@@ -1,3 +1,5 @@
+<p align="center"><img src="./assets/front_adj.webp" alt="VidPiper front" width="600"></p>
+
 # FIT VidPiper
 
 A modular pipeline for generating text summaries of video webinar content with screenshots and transcripts.
@@ -10,6 +12,8 @@ A modular pipeline for generating text summaries of video webinar content with s
 - **Summary Generation**: Use LLMs (Anthropic Claude, OpenAI GPT-4, Google Gemini) to generate summaries of each scene.
 - **Extensible Design**: Create custom pipeline stages and insert them at any point in the pipeline.
 - **Checkpoint System**: Save and load the state of the pipeline at any point to enable pausing and resuming processing.
+
+<p align="center"><img src="./assets/pipeline_adj.webp" alt="VidPiper pipeline" width="600"></p>
 
 ## Requirements
 

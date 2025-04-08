@@ -6,7 +6,7 @@ This script processes markdown summary files (with _sum.md suffix) and formats t
 into Marp slide decks using LLMs. It can process a single file or all files in a directory.
 
 Note: This standalone script provides the core formatting functionality that is also
-integrated into the main summerizer_cli.py script. You can use this script directly
+integrated into the main vidpiper_cli.py script. You can use this script directly
 for formatting operations, or use the main CLI with the "--run-mode format" option.
 
 Examples:
@@ -23,7 +23,7 @@ import sys
 from typing import Optional
 
 # NOTE: This script provides the same functionality as running:
-# python summerizer_cli.py --run-mode format
+# python vidpiper_cli.py --run-mode format
 
 from vidpiper.stages import create_summary_formatter
 from vidpiper.core.data_classes import PipelineResult
