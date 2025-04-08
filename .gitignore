@@ -6,6 +6,7 @@ tests/output/
 __pycache__/
 .ropeproject/
 .pytest_cache/
+.ruff_cache/
 /vid
 /sum_outputs
 /fmt_outputs
