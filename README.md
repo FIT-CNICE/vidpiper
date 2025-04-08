@@ -14,25 +14,38 @@ A modular pipeline for generating text summaries of video content with screensho
 ## Requirements
 
 - Python 3.8+
+- Poetry (for dependency management)
 - FFmpeg installed on the system
 - GPU recommended for faster processing (especially for Whisper transcription)
 
-Install the required packages:
+Install the required packages using Poetry:
 
 ```bash
-pip install -r requirements.txt
+poetry install
 ```
 
 ## Environment Setup
 
-Create a `.env` file in the root directory with your API keys:
+Before running the scripts, ensure that your API keys are set as environment variables. You can do this by creating a `.env` file (or any other file) and sourcing it in your shell. Your shell should automatically source this file whenever a new terminal is started.
 
+Example:
+
+```bash
+# In your .env file (or equivalent):
+export ANTHROPIC_API_KEY=your_anthropic_api_key
+export OPENAI_API_KEY=your_openai_api_key
+export GEMINI_API_KEY=your_gemini_api_key
 ```
-# Only one of these is required
-ANTHROPIC_API_KEY=your_anthropic_api_key
-OPENAI_API_KEY=your_openai_api_key
-GEMINI_API_KEY=your_gemini_api_key
+
+Then, in your shell's configuration file (e.g., `.bashrc`, `.zshrc`), add a line like:
+
+```bash
+source /path/to/your/.env
 ```
+
+(Replace `/path/to/your/.env` with the actual path to your `.env` file.)
+
+This will ensure that the API keys are available as environment variables whenever you run the scripts.
 
 ## Usage
 
@@ -55,33 +68,56 @@ python vid_summerizer_cli.py /path/to/video.mp4 \
 
 ### Individual Stages
 
-Run each stage separately:
+The individual stages can be run using the standalone scripts located in the `standalone_stages` directory, or by using the `summerizer_cli.py` script with the `--run-mode` option.
+
+Using the standalone scripts provides a simpler interface for running individual stages, while using the `summerizer_cli.py` script allows for running the entire pipeline or individual stages with more advanced options.
 
 1. Scene Detection:
 
 ```bash
 # Detect scenes and save to JSON
-python detect_scenes.py /path/to/video.mp4 \
+python standalone_stages/detect_scenes.py /path/to/video.mp4 \
   --threshold 35.0 \
   --skip-start 60.0
+```
+
+or
+
+```bash
+# Detect scenes using summerizer_cli.py
+python vid_summerizer_cli.py /path/to/video.mp4 --run-mode detect --threshold 35.0 --skip-start 60.0
 ```
 
 2. Scene Processing:
 
 ```bash
 # Process scenes (extract screenshots and transcripts)
-python process_scenes.py \
+python standalone_stages/process_scenes.py \
   --input-file video_output/detected_scenes.json \
   --use-whisper
+```
+
+or
+
+```bash
+# Process scenes using summerizer_cli.py
+python vid_summerizer_cli.py --run-mode process --input-file video_output/detected_scenes.json --use-whisper
 ```
 
 3. Summary Generation:
 
 ```bash
 # Generate summary
-python generate_summary.py \
+python standalone_stages/generate_summary.py \
   --input-file video_output/processed_scenes.json \
   --llm-provider gemini
+```
+
+or
+
+```bash
+# Generate summary using summerizer_cli.py
+python vid_summerizer_cli.py --run-mode summarize --input-file video_output/processed_scenes.json --llm-provider gemini
 ```
 
 ### Custom Pipelines
@@ -114,18 +150,23 @@ See `custom_pipeline_example.py` for a complete example of a custom pipeline.
 
 ```
 video_summarizer/
-  ├── core/               # Core pipeline components
-  │   ├── data_classes.py # Data classes for pipeline stages
-  │   └── pipeline.py     # Pipeline infrastructure
-  ├── stages/             # Pipeline stage implementations
-  │   ├── scene_detector.py   # Scene detection stage
-  │   ├── scene_processor.py  # Screenshot and transcript extraction
-  │   └── summary_generator.py # Summary generation with LLMs
-  └── llm_providers/      # LLM API provider implementations
-      ├── base.py         # Base LLM provider interface
-      ├── anthropic_provider.py # Claude implementation
-      ├── openai_provider.py    # GPT-4 implementation
-      └── gemini_provider.py    # Gemini implementation
+  ├── core/                       # Core pipeline components
+  │   ├── data_classes.py         # Data classes for pipeline stages
+  │   └── pipeline.py             # Pipeline infrastructure
+  ├── stages/                     # Pipeline stage implementations
+  │   ├── scene_detector.py       # Scene detection stage
+  │   ├── scene_processor.py      # Screenshot and transcript extraction
+  │   └── summary_generator.py     # Summary generation with LLMs
+  └── llm_providers/              # LLM API provider implementations
+      ├── base.py                 # Base LLM provider interface
+      ├── anthropic_provider.py     # Claude implementation
+      ├── openai_provider.py        # GPT-4 implementation
+      └── gemini_provider.py        # Gemini implementation
+standalone_stages/                  # Standalone stage implementations
+  ├── detect_scenes.py
+  ├── process_scenes.py
+  ├── summary_generator.py
+  └── format_summaries.py
 ```
 
 ## Customization Options
