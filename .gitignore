@@ -1,6 +1,7 @@
 vid/
 sum_outputs/
 fmt_outputs/
+cdeus_demo/
 *_output/
 tests/output/
 __pycache__/
