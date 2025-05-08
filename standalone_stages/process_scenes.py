@@ -44,25 +44,26 @@ def parse_args():
     parser.add_argument(
         "--output-file",
         default="processed_scenes.json",
-        help="Filename to save processing results (default: processed_scenes.json)",
+        help="Filename to save processing results (processed_scenes.json)",
     )
     parser.add_argument(
         "--use-whisper",
         action="store_true",
+        default=False,
         help="Use Whisper for transcription if available (default: False)",
     )
     parser.add_argument(
         "--whisper-model",
         default="small",
         choices=["tiny", "base", "small", "medium", "large"],
-        help="Whisper model to use (default: small)",
+        help="Whisper model to use (small)",
     )
 
     return parser.parse_args()
 
 
 def get_output_dir(args):
-    """Determine the output directory based on arguments or input file directory."""
+    """Determine the output directory based on arguments or input directory."""
     if args.output_dir:
         return args.output_dir
 

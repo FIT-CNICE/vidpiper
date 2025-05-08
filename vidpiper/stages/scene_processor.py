@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 
 from ..core.pipeline import PipelineStage
@@ -17,7 +18,7 @@ class SceneProcessor(PipelineStage):
     def __init__(
         self,
         output_dir: str,
-        use_whisper: bool = True,
+        use_whisper: bool = False,
         whisper_model: str = "small",
     ):
         self.output_dir = output_dir
@@ -255,9 +256,9 @@ class SceneProcessor(PipelineStage):
                 return self._transcribe_with_whisper(video_path, start, end)
             except Exception as e:
                 print(f"Whisper transcription failed: {e}")
-                return self._placeholder_transcript(start, end)
+                return self._placeholder_transcript(video_path, start, end)
         else:
-            return self._placeholder_transcript(start, end)
+            return self._placeholder_transcript(video_path, start, end)
 
     def _extract_audio_clip(
         self, video_path: str, start: float, end: float
@@ -307,7 +308,7 @@ class SceneProcessor(PipelineStage):
         try:
             audio_clip_path = self._extract_audio_clip(video_path, start, end)
         except subprocess.CalledProcessError:
-            return self._placeholder_transcript(start, end)
+            return self._placeholder_transcript(video_path, start, end)
 
         try:
             import torch
@@ -339,17 +340,69 @@ class SceneProcessor(PipelineStage):
 
         except Exception as e:
             print(f"Error during transcription with Whisper: {e}")
-            return self._placeholder_transcript(start, end)
+            return self._placeholder_transcript(video_path, start, end)
 
-    def _placeholder_transcript(self, start: float, end: float) -> str:
-        """Generate a placeholder transcript."""
-        transcript = (
-            f"Transcript for scene from {start:.2f} to {end:.2f} seconds."
-        )
-        print(
-            f"Generated placeholder transcript for scene ({start:.2f}-{end:.2f}s)."
-        )
-        return transcript
+    def _placeholder_transcript(
+        self, video_path: str, start: float, end: float
+    ) -> str:
+        """
+        Generate a transcript using faster-whisper, a CPU-friendly transcription model.
+        Falls back to a simple placeholder message if transcription fails.
+        """
+        try:
+            # Try to import faster-whisper
+            try:
+                from faster_whisper import WhisperModel
+
+                print("Using faster-whisper for CPU-friendly transcription")
+            except ImportError:
+                print("faster-whisper not installed. Installing...")
+                import subprocess
+
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "faster-whisper"]
+                )
+                from faster_whisper import WhisperModel
+
+            # Extract audio clip for this scene
+            try:
+                audio_clip_path = self._extract_audio_clip(
+                    video_path, start, end
+                )
+            except Exception as e:
+                print(f"Error extracting audio clip: {e}")
+                return f"Transcript for scene from {start:.2f} to {end:.2f} seconds."
+
+            # Load small model with int8 quantization for best CPU performance
+            model = WhisperModel("tiny", device="cpu", compute_type="int8")
+
+            # Transcribe the extracted audio
+            print(
+                f"Transcribing audio segment ({start:.2f}-{end:.2f}s) with faster-whisper..."
+            )
+            segments, info = model.transcribe(audio_clip_path, beam_size=1)
+
+            # Collect transcribed text from all segments
+            transcript_parts = []
+            for segment in segments:
+                transcript_parts.append(segment.text)
+
+            transcript = " ".join(transcript_parts).strip()
+
+            if not transcript:
+                transcript = f"[No speech detected between {start:.2f} and {end:.2f} seconds]"
+
+            print(
+                f"Successfully transcribed audio segment ({start:.2f}-{end:.2f}s)"
+            )
+            return transcript
+
+        except Exception as e:
+            print(f"Error in CPU transcription: {e}")
+            # Fallback to very basic placeholder
+            return (
+                f"Transcript for scene from {start:.2f} to {end:.2f} seconds."
+            )
 
     def cleanup(self) -> None:
         """Clean up temporary files."""
