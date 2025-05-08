@@ -40,7 +40,7 @@ class LLMSummaryGenerator(PipelineStage):
 
         # Initialize all available LLM generators
         self.generators = {
-            "gemini": GeminiGenerator(model, max_tokens),
+            "gemini": GeminiGenerator("gemini-2.0-flash", max_tokens),
             "anthropic": AnthropicGenerator(
                 "claude-3-7-sonnet-20250219", max_tokens
             ),

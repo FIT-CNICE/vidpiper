@@ -43,8 +43,8 @@ def parse_args():
     )
     parser.add_argument(
         "--model",
-        default="claude-3-7-sonnet-20250219",
-        help="LLM model name (default: claude-3-7-sonnet-20250219)",
+        default="gemini-2.0-flash",
+        help="LLM model name (default: gemini-2.0-flash)",
     )
     parser.add_argument(
         "--max-tokens",
@@ -63,7 +63,7 @@ def parse_args():
 
 
 def get_output_dir(args):
-    """Determine the output directory based on arguments or input file directory."""
+    """Determine the output directory based on arguments or input directory."""
     if args.output_dir:
         return args.output_dir
 
