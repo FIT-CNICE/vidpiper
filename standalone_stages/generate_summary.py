@@ -11,8 +11,15 @@ import sys
 import json
 import argparse
 
-from vidpiper.core import PipelineResult
-from vidpiper.stages import create_summary_generator
+# Add the project root directory to sys.path to access the vidpiper module
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(script_dir, ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Import vidpiper modules after path setup
+from vidpiper.core import PipelineResult  # noqa: E402
+from vidpiper.stages import create_summary_generator  # noqa: E402
 
 # NOTE: This script provides the same functionality as running:
 # python vidpiper_cli.py --run-mode summarize

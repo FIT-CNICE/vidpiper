@@ -22,11 +22,18 @@ import argparse
 import sys
 from typing import Optional
 
+# Add the project root directory to sys.path to access the vidpiper module
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(script_dir, ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 # NOTE: This script provides the same functionality as running:
 # python vidpiper_cli.py --run-mode format
 
-from vidpiper.stages import create_summary_formatter
-from vidpiper.core.data_classes import PipelineResult
+# Import vidpiper modules after path setup
+from vidpiper.stages import create_summary_formatter  # noqa: E402
+from vidpiper.core.data_classes import PipelineResult  # noqa: E402
 
 
 def process_file(file_path: str, output_dir: Optional[str] = None) -> str:

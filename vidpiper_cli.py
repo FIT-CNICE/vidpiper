@@ -12,8 +12,8 @@ import sys
 import json
 import argparse
 
-from video_summarizer.core import Pipeline, PipelineResult
-from video_summarizer.stages import (
+from vidpiper.core import Pipeline, PipelineResult
+from vidpiper.stages import (
     create_scene_detector,
     create_scene_processor,
     create_summary_generator,
@@ -53,11 +53,6 @@ def parse_args():
 
     # Scene detection options
     detect_group = parser.add_argument_group("Scene Detection Options")
-    detect_group.add_argument(
-        "--output-dir",
-        default=None,
-        help="Directory to save output (defaults to <video_name>_output). The standalone `detect_scenes.py` script in the `standalone_stages` directory allows specifying the output filename using the `--output-file` argument.",
-    )
     detect_group.add_argument(
         "--threshold",
         type=float,
