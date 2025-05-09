@@ -18,14 +18,14 @@ A modular pipeline for generating text summaries of video webinar content with s
 ## Requirements
 
 - Python 3.8+
-- Poetry (for dependency management)
+- uv (for dependency management)
 - FFmpeg installed on the system
 - GPU recommended for faster processing (especially for Whisper transcription)
 
 Install the required packages using Poetry:
 
 ```bash
-poetry install
+uv sync
 ```
 
 ## Environment Setup
@@ -51,23 +51,13 @@ source /path/to/your/.env
 
 This will ensure that the API keys are available as environment variables whenever you run the scripts.
 
-## Usage
-
-### Complete Pipeline
-
-Run the complete pipeline with the CLI tool:
+## Run VidPiper from Anywhere
 
 ```bash
-# Basic usage
-python vidpiper_cli.py /path/to/video.mp4
-
-# With options
-python vidpiper_cli.py /path/to/video.mp4 \
-  --output-dir my_output \
-  --threshold 30.0 \
-  --skip-start 60.0 \
-  --use-whisper \
-  --llm-provider anthropic
+chmod +x vidpiper.sh
+cp vidpiper.sh ~/.local/bin/vidpiper_cli
+# Now you can use vidpiper by simply
+vidpiper_cli {detect, process, summarize, update}
 ```
 
 ### Individual Stages
@@ -85,12 +75,6 @@ python standalone_stages/detect_scenes.py /path/to/video.mp4 \
   --skip-start 60.0
 ```
 
-or
-
-```bash
-# Detect scenes using vidpiper_cli.py
-python vidpiper_cli.py /path/to/video.mp4 --run-mode detect --threshold 35.0 --skip-start 60.0
-```
 
 2. Scene Processing:
 
@@ -101,13 +85,6 @@ python standalone_stages/process_scenes.py \
   --use-whisper
 ```
 
-or
-
-```bash
-# Process scenes using vidpiper_cli.py
-python vidpiper_cli.py --run-mode process --input-file video_output/detected_scenes.json --use-whisper
-```
-
 3. Summary Generation:
 
 ```bash
@@ -115,13 +92,6 @@ python vidpiper_cli.py --run-mode process --input-file video_output/detected_sce
 python standalone_stages/generate_summary.py \
   --input-file video_output/processed_scenes.json \
   --llm-provider gemini
-```
-
-or
-
-```bash
-# Generate summary using vidpiper_cli.py
-python vidpiper_cli.py --run-mode summarize --input-file video_output/processed_scenes.json --llm-provider gemini
 ```
 
 ### Custom Pipelines
@@ -149,29 +119,6 @@ result = pipeline.run(PipelineResult(video_path="/path/to/video.mp4"))
 ```
 
 See `custom_pipeline_example.py` for a complete example of a custom pipeline.
-
-## Module Structure
-
-```
-vidpiper/
-  ├── core/                       # Core pipeline components
-  │   ├── data_classes.py         # Data classes for pipeline stages
-  │   └── pipeline.py             # Pipeline infrastructure
-  ├── stages/                     # Pipeline stage implementations
-  │   ├── scene_detector.py       # Scene detection stage
-  │   ├── scene_processor.py      # Screenshot and transcript extraction
-  │   └── summary_generator.py     # Summary generation with LLMs
-  └── llm_providers/              # LLM API provider implementations
-      ├── base.py                 # Base LLM provider interface
-      ├── anthropic_provider.py     # Claude implementation
-      ├── openai_provider.py        # GPT-4 implementation
-      └── gemini_provider.py        # Gemini implementation
-standalone_stages/                  # Standalone stage implementations
-  ├── detect_scenes.py
-  ├── process_scenes.py
-  ├── summary_generator.py
-  └── format_summaries.py
-```
 
 ## Customization Options
 
