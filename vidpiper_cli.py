@@ -152,9 +152,14 @@ def parse_args():
         help="Directory to save output (defaults to directory of input file)",
     )
     summarize_parser.add_argument(
+        "--output-file",
+        default=None,
+        help="Filename for the output summary (defaults to auto-generated name)",
+    )
+    summarize_parser.add_argument(
         "--model",
-        default="claude-3-7-sonnet-20250219",
-        help="LLM model name (default: claude-3-7-sonnet-20250219)",
+        default="gemini-2.0-flash",
+        help="LLM model name (default: gemini-2.0-flash)",
     )
     summarize_parser.add_argument(
         "--max-tokens",
@@ -184,36 +189,38 @@ def parse_args():
         "format", help="Format summaries into presentation slides"
     )
     format_parser.add_argument(
+        "path",
+        help="Path to a summary file or directory containing summary files",
+        nargs="?",
+        default=None,
+    )
+    format_parser.add_argument(
+        "-o", "--output-dir",
+        default=None,
+        help="Directory to save formatted files",
+    )
+    format_parser.add_argument(
+        "-p", "--provider",
+        default="gemini",
+        choices=["gemini", "anthropic", "openai"],
+        help="LLM provider to use (default: gemini)",
+        dest="llm_provider",
+    )
+    format_parser.add_argument(
+        "-m", "--model",
+        default="gemini-2.0-flash",
+        help="Model to use (default: gemini-2.0-flash)",
+    )
+    # Keep legacy options for backward compatibility
+    format_parser.add_argument(
         "--format-single",
         default=None,
-        help="Path to a single summary file to format",
+        help="Path to a single summary file to format (legacy option)",
     )
     format_parser.add_argument(
         "--format-dir",
         default=None,
-        help="Directory containing summary files to format",
-    )
-    format_parser.add_argument(
-        "--output-dir",
-        default=None,
-        help="Directory to save output (defaults to same as input)",
-    )
-    format_parser.add_argument(
-        "--model",
-        default="claude-3-7-sonnet-20250219",
-        help="LLM model name (default: claude-3-7-sonnet-20250219)",
-    )
-    format_parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=1500,
-        help="Maximum tokens per API response (default: 1500)",
-    )
-    format_parser.add_argument(
-        "--llm-provider",
-        default="gemini",
-        choices=["anthropic", "openai", "gemini"],
-        help="Preferred LLM provider (default: gemini)",
+        help="Directory containing summary files to format (legacy option)",
     )
     format_parser.add_argument(
         "--checkpoint-dir",
@@ -236,19 +243,27 @@ def parse_args():
         "update", help="Update existing summaries"
     )
     update_parser.add_argument(
-        "--summary-file",
+        "--summary_file",
         required=True,
         help="Path to the summary file to update",
     )
     update_parser.add_argument(
-        "--update-prompt",
+        "--feedback",
         default=None,
-        help="Custom update prompt (default: use built-in prompt)",
+        help="Human feedback text for improving the summary",
     )
     update_parser.add_argument(
-        "--output-dir",
+        "--output_dir",
         default=None,
-        help="Directory to save output (defaults to directory of input file)",
+        help="Directory to save the updated summary (defaults to same as summary file)",
+        dest="output_dir",
+    )
+    update_parser.add_argument(
+        "--provider",
+        default="gemini",
+        choices=["gemini", "anthropic", "openai"],
+        help="Preferred LLM provider",
+        dest="llm_provider",
     )
     update_parser.add_argument(
         "--model",
@@ -261,11 +276,16 @@ def parse_args():
         default=1500,
         help="Maximum tokens per API response (default: 1500)",
     )
+    # Add legacy option for backward compatibility
     update_parser.add_argument(
-        "--llm-provider",
-        default="gemini",
-        choices=["anthropic", "openai", "gemini"],
-        help="Preferred LLM provider (default: gemini)",
+        "--summary-file",
+        dest="summary_file_alt",
+        help=argparse.SUPPRESS,  # Hidden parameter
+    )
+    update_parser.add_argument(
+        "--update-prompt",
+        dest="feedback_alt",
+        help=argparse.SUPPRESS,  # Hidden parameter
     )
 
     return parser.parse_args()
@@ -729,12 +749,13 @@ def main():
             print(f"Error loading input file: {e}")
             sys.exit(1)
 
-        # Create the summary generator
+        # Create the summary generator with optional output filename
         generator = create_summary_generator(
             model=args.model,
             max_tokens=args.max_tokens,
             output_dir=output_dir,
             preferred_provider=args.llm_provider,
+            output_filename=args.output_file,
         )
 
         # Run summary generation
@@ -754,26 +775,26 @@ def main():
             sys.exit(1)
 
     elif args.command == "format":
-        # For format, check that we have either format_single or format_dir
-        if not args.format_single and not args.format_dir:
-            print("Error: Either --format-single or --format-dir must be provided.")
+        # Handle different input methods: positional path arg, format-single, or format-dir
+        path = args.path or args.format_single or args.format_dir
+        
+        if not path:
+            print("Error: You must provide a path to a summary file or directory.")
+            print("Use either a positional argument or --format-single/--format-dir options.")
             sys.exit(1)
 
-        if args.format_single and not os.path.exists(args.format_single):
-            print(f"Error: Summary file not found: {args.format_single}")
+        # Check if the path exists
+        if not os.path.exists(path):
+            print(f"Error: Path not found: {path}")
             sys.exit(1)
-
-        if args.format_dir and not os.path.isdir(args.format_dir):
-            print(f"Error: Directory not found: {args.format_dir}")
-            sys.exit(1)
-
+            
         # Determine output directory
         output_dir = args.output_dir
         if not output_dir:
-            if args.format_single:
-                output_dir = os.path.dirname(os.path.abspath(args.format_single))
+            if os.path.isfile(path):
+                output_dir = os.path.dirname(os.path.abspath(path))
             else:
-                output_dir = args.format_dir
+                output_dir = path
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -785,49 +806,74 @@ def main():
             preferred_provider=args.llm_provider,
         )
 
-        # Create initial data
-        if args.format_single:
-            print(f"Formatting single file: {args.format_single}")
+        # Process based on path type
+        if os.path.isfile(path):
+            # Check if the file has the _sum.md suffix
+            if not path.endswith("_sum.md"):
+                print(f"Warning: File does not have _sum.md suffix: {path}")
+                print("It may not be a summary file. Continuing anyway...")
+                
+            # Process file
+            print(f"Formatting single file: {path}")
             initial_data = PipelineResult(
                 video_path=args.video_path,
-                summary_file=args.format_single,
+                summary_file=path,
                 output_dir=output_dir,
             )
+            
+            # Run formatter
+            try:
+                result = formatter.run(initial_data)
+                print("Summary formatting complete.")
+
+                if result.formatted_file:
+                    print(f"Formatted Marp deck saved to: {result.formatted_file}")
+                else:
+                    print("No formatted file was produced.")
+                    
+            except Exception as e:
+                print(f"Error: Summary formatting failed: {e}")
+                sys.exit(1)
         else:
-            print(f"Formatting all summary files in directory: {args.format_dir}")
-            initial_data = PipelineResult(
-                video_path=args.format_dir,  # Use directory as video_path for search
-                output_dir=output_dir,
-            )
-
-        # Run formatting
-        try:
-            result = formatter.run(initial_data)
-            print("Summary formatting complete.")
-
-            if result.formatted_file:
-                print(f"Formatted Marp deck saved to: {result.formatted_file}")
-            elif "formatted_summaries" in result.metadata:
-                formatted_files = result.metadata["formatted_summaries"]
-                print(f"Formatted {len(formatted_files)} summary files:")
-                for f in formatted_files:
-                    print(f"  - {f}")
-
-        except Exception as e:
-            print(f"Error: Summary formatting failed: {e}")
-            sys.exit(1)
+            # Process directory
+            print(f"Formatting all summary files in directory: {path}")
+            
+            try:
+                # Use formatter's directory processing capabilities
+                formatted_files = formatter.format_directory(path)
+                
+                if formatted_files:
+                    print(f"Formatted {len(formatted_files)} files:")
+                    for f in formatted_files:
+                        print(f"  - {f}")
+                else:
+                    print("No summary files found or failed to format files.")
+                    
+            except Exception as e:
+                print(f"Error: Summary formatting failed: {e}")
+                sys.exit(1)
 
     elif args.command == "update":
+        # Handle both naming conventions for backward compatibility
+        summary_file = args.summary_file or args.summary_file_alt
+        feedback = args.feedback or args.feedback_alt
+        
         # Ensure summary file exists
-        if not os.path.exists(args.summary_file):
-            print(f"Error: Summary file not found: {args.summary_file}")
+        if not os.path.exists(summary_file):
+            print(f"Error: Summary file not found: {summary_file}")
+            sys.exit(1)
+            
+        # Validate feedback
+        if not feedback or not feedback.strip():
+            print("Error: Feedback text is empty.")
+            print("Please provide feedback using the --feedback parameter.")
             sys.exit(1)
 
         # Determine output directory
         output_dir = args.output_dir
         if not output_dir:
             # Use the directory of the summary file
-            output_dir = os.path.dirname(os.path.abspath(args.summary_file))
+            output_dir = os.path.dirname(os.path.abspath(summary_file))
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -837,30 +883,28 @@ def main():
             max_tokens=args.max_tokens,
             output_dir=output_dir,
             preferred_provider=args.llm_provider,
-            custom_prompt=args.update_prompt,
-        )
-
-        # Create initial data
-        initial_data = PipelineResult(
-            summary_file=args.summary_file,
-            output_dir=output_dir,
         )
 
         # Run update
         try:
-            print(f"Updating summary: {args.summary_file}")
-            result = updater.run(initial_data)
-
+            print(f"Updating summary: {summary_file}")
+            print(f"Based on feedback: {feedback}")
+            
+            # Use the direct update method
+            updated_summary_path = updater.update_summary_file(
+                summary_file=summary_file, 
+                feedback=feedback, 
+                output_dir=output_dir
+            )
+            
             print("Summary update complete.")
-
-            if hasattr(result, "updated_summary_file") and result.updated_summary_file:
-                print(f"Updated summary saved to: {result.updated_summary_file}")
-            else:
-                print("No updated summary file was produced.")
+            print(f"Updated summary saved to: {updated_summary_path}")
 
         except Exception as e:
             print(f"Error: Summary update failed: {e}")
             sys.exit(1)
+        finally:
+            updater.cleanup()
 
 
 if __name__ == "__main__":
