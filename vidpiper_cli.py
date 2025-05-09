@@ -2,9 +2,8 @@
 """
 VidPiper CLI
 
-This script provides a command-line interface for summarizing videos
-using the video_summarizer package. It allows for running the entire pipeline
-or individual stages as needed.
+This script provides a command-line interface for running the vidpiper
+pipeline stages. It supports executing stages as individual commands.
 """
 
 import os
@@ -18,129 +17,255 @@ from vidpiper.stages import (
     create_scene_processor,
     create_summary_generator,
     create_summary_formatter,
+    create_summary_updater,
 )
 
 
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Generate a markdown summary of a video with screenshots"
+        description="VidPiper: AI agent for summarizing webinar videos",
     )
 
-    # Main options
-    parser.add_argument("video_path", help="Path to the video file")
-    parser.add_argument(
+    # Add subparsers
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, help="Pipeline stage to run"
+    )
+
+    # 1. Scene Detection
+    detect_parser = subparsers.add_parser(
+        "detect", help="Detect scenes in a video"
+    )
+    detect_parser.add_argument("video_path", help="Path to the video file")
+    detect_parser.add_argument(
         "--output-dir",
         default=None,
         help="Directory to save output (defaults to <video_name>_output)",
     )
-    parser.add_argument(
-        "--run-mode",
-        default="full",
-        choices=["full", "detect", "process", "summarize", "format"],
-        help="Mode to run: full pipeline or individual stages (default: full)",
+    detect_parser.add_argument(
+        "--output-file",
+        default="detected_scenes.json",
+        help="Filename to save detection results (default: detected_scenes.json)",
     )
-    parser.add_argument(
-        "--checkpoint-dir",
-        default=None,
-        help="Directory to save/load pipeline checkpoints",
-    )
-    parser.add_argument(
-        "--checkpoint-file",
-        default=None,
-        help="Specific checkpoint file to load (for running a specific stage)",
-    )
-
-    # Scene detection options
-    detect_group = parser.add_argument_group("Scene Detection Options")
-    detect_group.add_argument(
+    detect_parser.add_argument(
         "--threshold",
         type=float,
         default=35.0,
         help="Threshold for scene detection (default: 35.0)",
     )
-    detect_group.add_argument(
+    detect_parser.add_argument(
         "--downscale",
         type=int,
         default=64,
         help="Downscale factor for scene detection (default: 64)",
     )
-    detect_group.add_argument(
+    detect_parser.add_argument(
         "--timeout",
         type=int,
         default=180,
         help="Timeout in seconds for scene detection (default: 180)",
     )
-    detect_group.add_argument(
+    detect_parser.add_argument(
         "--max-size",
         type=float,
         default=20.0,
         help="Maximum size of scenes in MB (default: 20.0)",
     )
-    detect_group.add_argument(
+    detect_parser.add_argument(
         "--skip-start",
         type=float,
         default=60.0,
         help="Number of seconds to skip at the beginning of the video (default: 60.0)",
     )
-    detect_group.add_argument(
+    detect_parser.add_argument(
         "--skip-end",
         type=float,
         default=0.0,
         help="Number of seconds to skip at the end of the video (default: 0.0)",
     )
-    detect_group.add_argument(
+    detect_parser.add_argument(
         "--max-scene",
         type=int,
         default=None,
         help="Maximum number of scenes to detect (default: auto-calculated based on duration)",
     )
+    detect_parser.add_argument(
+        "--checkpoint-dir",
+        default=None,
+        help="Directory to save/load pipeline checkpoints",
+    )
 
-    # Scene processing options
-    process_group = parser.add_argument_group("Scene Processing Options")
-    process_group.add_argument(
+    # 2. Scene Processing
+    process_parser = subparsers.add_parser(
+        "process", help="Process scenes with screenshots and transcripts"
+    )
+    process_parser.add_argument(
+        "--input-file",
+        required=True,
+        help="Input JSON file with detected scenes",
+    )
+    process_parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory to save output (defaults to directory of input file)",
+    )
+    process_parser.add_argument(
+        "--output-file",
+        default="processed_scenes.json",
+        help="Filename to save processing results (processed_scenes.json)",
+    )
+    process_parser.add_argument(
         "--use-whisper",
         action="store_true",
+        default=False,
         help="Use Whisper for transcription if available (default: False)",
     )
-    process_group.add_argument(
+    process_parser.add_argument(
         "--whisper-model",
         default="small",
         choices=["tiny", "base", "small", "medium", "large"],
-        help="Whisper model to use (default: small)",
+        help="Whisper model to use (small)",
+    )
+    process_parser.add_argument(
+        "--checkpoint-dir",
+        default=None,
+        help="Directory to save/load pipeline checkpoints",
+    )
+    process_parser.add_argument(
+        "--checkpoint-file",
+        default=None,
+        help="Specific checkpoint file to load",
     )
 
-    # Summary generation options
-    summary_group = parser.add_argument_group("Summary Generation Options")
-    summary_group.add_argument(
+    # 3. Summary Generation
+    summarize_parser = subparsers.add_parser(
+        "summarize", help="Generate summaries from processed scenes"
+    )
+    summarize_parser.add_argument(
+        "--input-file",
+        required=True,
+        help="Input JSON file with processed scenes",
+    )
+    summarize_parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory to save output (defaults to directory of input file)",
+    )
+    summarize_parser.add_argument(
         "--model",
         default="claude-3-7-sonnet-20250219",
         help="LLM model name (default: claude-3-7-sonnet-20250219)",
     )
-    summary_group.add_argument(
+    summarize_parser.add_argument(
         "--max-tokens",
         type=int,
         default=1500,
         help="Maximum tokens per API response (default: 1500)",
     )
-    summary_group.add_argument(
+    summarize_parser.add_argument(
         "--llm-provider",
         default="gemini",
         choices=["anthropic", "openai", "gemini"],
         help="Preferred LLM provider (default: gemini)",
     )
-
-    # Summary formatting options
-    format_group = parser.add_argument_group("Summary Formatting Options")
-    format_group.add_argument(
-        "--format-dir",
+    summarize_parser.add_argument(
+        "--checkpoint-dir",
         default=None,
-        help="Directory containing summary files to format (default: same as output-dir)",
+        help="Directory to save/load pipeline checkpoints",
     )
-    format_group.add_argument(
+    summarize_parser.add_argument(
+        "--checkpoint-file",
+        default=None,
+        help="Specific checkpoint file to load",
+    )
+
+    # 4. Summary Formatting
+    format_parser = subparsers.add_parser(
+        "format", help="Format summaries into presentation slides"
+    )
+    format_parser.add_argument(
         "--format-single",
         default=None,
         help="Path to a single summary file to format",
+    )
+    format_parser.add_argument(
+        "--format-dir",
+        default=None,
+        help="Directory containing summary files to format",
+    )
+    format_parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory to save output (defaults to same as input)",
+    )
+    format_parser.add_argument(
+        "--model",
+        default="claude-3-7-sonnet-20250219",
+        help="LLM model name (default: claude-3-7-sonnet-20250219)",
+    )
+    format_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=1500,
+        help="Maximum tokens per API response (default: 1500)",
+    )
+    format_parser.add_argument(
+        "--llm-provider",
+        default="gemini",
+        choices=["anthropic", "openai", "gemini"],
+        help="Preferred LLM provider (default: gemini)",
+    )
+    format_parser.add_argument(
+        "--checkpoint-dir",
+        default=None,
+        help="Directory to save/load pipeline checkpoints",
+    )
+    format_parser.add_argument(
+        "--checkpoint-file",
+        default=None,
+        help="Specific checkpoint file to load",
+    )
+    format_parser.add_argument(
+        "--video-path",
+        default=None,
+        help="Optional path to the original video file",
+    )
+
+    # 5. Summary Update
+    update_parser = subparsers.add_parser(
+        "update", help="Update existing summaries"
+    )
+    update_parser.add_argument(
+        "--summary-file",
+        required=True,
+        help="Path to the summary file to update",
+    )
+    update_parser.add_argument(
+        "--update-prompt",
+        default=None,
+        help="Custom update prompt (default: use built-in prompt)",
+    )
+    update_parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory to save output (defaults to directory of input file)",
+    )
+    update_parser.add_argument(
+        "--model",
+        default="gemini-2.0-flash",
+        help="LLM model name (default: gemini-2.0-flash)",
+    )
+    update_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=1500,
+        help="Maximum tokens per API response (default: 1500)",
+    )
+    update_parser.add_argument(
+        "--llm-provider",
+        default="gemini",
+        choices=["anthropic", "openai", "gemini"],
+        help="Preferred LLM provider (default: gemini)",
     )
 
     return parser.parse_args()
@@ -485,34 +610,257 @@ def main():
     """Main entry point for the CLI."""
     args = parse_args()
 
-    # Check for format mode which might not need a video file
-    if args.run_mode == "format" and (args.format_single or args.format_dir):
-        if args.format_single and not os.path.exists(args.format_single):
-            print(f"Summary file not found: {args.format_single}")
-            sys.exit(1)
-        if args.format_dir and not os.path.isdir(args.format_dir):
-            print(f"Directory not found: {args.format_dir}")
-            sys.exit(1)
-    else:
-        # For other modes, ensure video file exists
+    # Handle the different commands
+    if args.command == "detect":
+        # Ensure video file exists
         if not os.path.exists(args.video_path):
-            print(f"Video file not found: {args.video_path}")
+            print(f"Error: Video file not found: {args.video_path}")
             sys.exit(1)
 
-    # Run the appropriate pipeline based on the run mode
-    if args.run_mode == "full":
-        run_full_pipeline(args)
-    elif args.run_mode == "detect":
-        run_scene_detection(args)
-    elif args.run_mode == "process":
-        run_scene_processing(args)
-    elif args.run_mode == "summarize":
-        run_summary_generation(args)
-    elif args.run_mode == "format":
-        run_summary_formatting(args)
-    else:
-        print(f"Unknown run mode: {args.run_mode}")
-        sys.exit(1)
+        # Determine output directory
+        output_dir = args.output_dir
+        if not output_dir:
+            video_basename = os.path.basename(args.video_path)
+            video_name = os.path.splitext(video_basename)[0]
+            output_dir = f"{video_name}_output"
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Create and run scene detector
+        detector = create_scene_detector(
+            threshold=args.threshold,
+            downscale_factor=args.downscale,
+            timeout_seconds=args.timeout,
+            max_size_mb=args.max_size,
+            skip_start=args.skip_start,
+            skip_end=args.skip_end,
+            max_scene=args.max_scene,
+        )
+
+        # Create initial pipeline data
+        initial_data = PipelineResult(video_path=args.video_path)
+
+        # Run detection
+        try:
+            print(f"Detecting scenes in {args.video_path}...")
+            result = detector.run(initial_data)
+
+            print(f"Scene detection complete. Detected {len(result.scenes)} scenes.")
+
+            # Save result to the output file
+            output_file = os.path.join(output_dir, args.output_file)
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(result.to_dict(), f, indent=2)
+
+            print(f"Saved scene detection results to: {output_file}")
+
+        except Exception as e:
+            print(f"Error: Scene detection failed: {e}")
+            sys.exit(1)
+
+    elif args.command == "process":
+        # Ensure input file exists
+        if not os.path.exists(args.input_file):
+            print(f"Error: Input file not found: {args.input_file}")
+            sys.exit(1)
+
+        # Determine output directory
+        output_dir = args.output_dir
+        if not output_dir:
+            # Use the directory of the input file
+            output_dir = os.path.dirname(os.path.abspath(args.input_file))
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Load input data
+        try:
+            with open(args.input_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            initial_data = PipelineResult.from_dict(data)
+        except Exception as e:
+            print(f"Error loading input file: {e}")
+            sys.exit(1)
+
+        # Create the scene processor
+        processor = create_scene_processor(
+            output_dir=output_dir,
+            use_whisper=args.use_whisper,
+            whisper_model=args.whisper_model,
+        )
+
+        # Run processing
+        try:
+            print(f"Processing {len(initial_data.scenes)} scenes...")
+            result = processor.run(initial_data)
+
+            print(f"Scene processing complete. Processed {len(result.scenes)} scenes.")
+
+            # Save result to the output file
+            output_file = os.path.join(output_dir, args.output_file)
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(result.to_dict(), f, indent=2)
+
+            print(f"Saved processed scenes to: {output_file}")
+
+        except Exception as e:
+            print(f"Error: Scene processing failed: {e}")
+            sys.exit(1)
+
+    elif args.command == "summarize":
+        # Ensure input file exists
+        if not os.path.exists(args.input_file):
+            print(f"Error: Input file not found: {args.input_file}")
+            sys.exit(1)
+
+        # Determine output directory
+        output_dir = args.output_dir
+        if not output_dir:
+            # Use the directory of the input file
+            output_dir = os.path.dirname(os.path.abspath(args.input_file))
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Load input data
+        try:
+            with open(args.input_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            initial_data = PipelineResult.from_dict(data)
+        except Exception as e:
+            print(f"Error loading input file: {e}")
+            sys.exit(1)
+
+        # Create the summary generator
+        generator = create_summary_generator(
+            model=args.model,
+            max_tokens=args.max_tokens,
+            output_dir=output_dir,
+            preferred_provider=args.llm_provider,
+        )
+
+        # Run summary generation
+        try:
+            print("Generating summary...")
+            result = generator.run(initial_data)
+
+            print("Summary generation complete.")
+
+            if result.summary_file:
+                print(f"Summary saved to: {result.summary_file}")
+            else:
+                print("No summary file was produced.")
+
+        except Exception as e:
+            print(f"Error: Summary generation failed: {e}")
+            sys.exit(1)
+
+    elif args.command == "format":
+        # For format, check that we have either format_single or format_dir
+        if not args.format_single and not args.format_dir:
+            print("Error: Either --format-single or --format-dir must be provided.")
+            sys.exit(1)
+
+        if args.format_single and not os.path.exists(args.format_single):
+            print(f"Error: Summary file not found: {args.format_single}")
+            sys.exit(1)
+
+        if args.format_dir and not os.path.isdir(args.format_dir):
+            print(f"Error: Directory not found: {args.format_dir}")
+            sys.exit(1)
+
+        # Determine output directory
+        output_dir = args.output_dir
+        if not output_dir:
+            if args.format_single:
+                output_dir = os.path.dirname(os.path.abspath(args.format_single))
+            else:
+                output_dir = args.format_dir
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Create the summary formatter
+        formatter = create_summary_formatter(
+            model=args.model,
+            max_tokens=args.max_tokens,
+            output_dir=output_dir,
+            preferred_provider=args.llm_provider,
+        )
+
+        # Create initial data
+        if args.format_single:
+            print(f"Formatting single file: {args.format_single}")
+            initial_data = PipelineResult(
+                video_path=args.video_path,
+                summary_file=args.format_single,
+                output_dir=output_dir,
+            )
+        else:
+            print(f"Formatting all summary files in directory: {args.format_dir}")
+            initial_data = PipelineResult(
+                video_path=args.format_dir,  # Use directory as video_path for search
+                output_dir=output_dir,
+            )
+
+        # Run formatting
+        try:
+            result = formatter.run(initial_data)
+            print("Summary formatting complete.")
+
+            if result.formatted_file:
+                print(f"Formatted Marp deck saved to: {result.formatted_file}")
+            elif "formatted_summaries" in result.metadata:
+                formatted_files = result.metadata["formatted_summaries"]
+                print(f"Formatted {len(formatted_files)} summary files:")
+                for f in formatted_files:
+                    print(f"  - {f}")
+
+        except Exception as e:
+            print(f"Error: Summary formatting failed: {e}")
+            sys.exit(1)
+
+    elif args.command == "update":
+        # Ensure summary file exists
+        if not os.path.exists(args.summary_file):
+            print(f"Error: Summary file not found: {args.summary_file}")
+            sys.exit(1)
+
+        # Determine output directory
+        output_dir = args.output_dir
+        if not output_dir:
+            # Use the directory of the summary file
+            output_dir = os.path.dirname(os.path.abspath(args.summary_file))
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Create the summary updater
+        updater = create_summary_updater(
+            model=args.model,
+            max_tokens=args.max_tokens,
+            output_dir=output_dir,
+            preferred_provider=args.llm_provider,
+            custom_prompt=args.update_prompt,
+        )
+
+        # Create initial data
+        initial_data = PipelineResult(
+            summary_file=args.summary_file,
+            output_dir=output_dir,
+        )
+
+        # Run update
+        try:
+            print(f"Updating summary: {args.summary_file}")
+            result = updater.run(initial_data)
+
+            print("Summary update complete.")
+
+            if hasattr(result, "updated_summary_file") and result.updated_summary_file:
+                print(f"Updated summary saved to: {result.updated_summary_file}")
+            else:
+                print("No updated summary file was produced.")
+
+        except Exception as e:
+            print(f"Error: Summary update failed: {e}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
