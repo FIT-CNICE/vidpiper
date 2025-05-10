@@ -280,7 +280,6 @@ def parse_args():
     update_parser.add_argument(
         "--summary-file",
         dest="summary_file_alt",
-        help=argparse.SUPPRESS,  # Hidden parameter
     )
     update_parser.add_argument(
         "--update-prompt",
@@ -755,7 +754,7 @@ def main():
             max_tokens=args.max_tokens,
             output_dir=output_dir,
             preferred_provider=args.llm_provider,
-            output_filename=args.output_file,
+            # output_filename=args.output_file,
         )
 
         # Run summary generation
@@ -777,7 +776,7 @@ def main():
     elif args.command == "format":
         # Handle different input methods: positional path arg, format-single, or format-dir
         path = args.path or args.format_single or args.format_dir
-        
+
         if not path:
             print("Error: You must provide a path to a summary file or directory.")
             print("Use either a positional argument or --format-single/--format-dir options.")
@@ -787,7 +786,7 @@ def main():
         if not os.path.exists(path):
             print(f"Error: Path not found: {path}")
             sys.exit(1)
-            
+
         # Determine output directory
         output_dir = args.output_dir
         if not output_dir:
@@ -812,7 +811,7 @@ def main():
             if not path.endswith("_sum.md"):
                 print(f"Warning: File does not have _sum.md suffix: {path}")
                 print("It may not be a summary file. Continuing anyway...")
-                
+
             # Process file
             print(f"Formatting single file: {path}")
             initial_data = PipelineResult(
@@ -820,7 +819,7 @@ def main():
                 summary_file=path,
                 output_dir=output_dir,
             )
-            
+
             # Run formatter
             try:
                 result = formatter.run(initial_data)
@@ -830,25 +829,25 @@ def main():
                     print(f"Formatted Marp deck saved to: {result.formatted_file}")
                 else:
                     print("No formatted file was produced.")
-                    
+
             except Exception as e:
                 print(f"Error: Summary formatting failed: {e}")
                 sys.exit(1)
         else:
             # Process directory
             print(f"Formatting all summary files in directory: {path}")
-            
+
             try:
                 # Use formatter's directory processing capabilities
                 formatted_files = formatter.format_directory(path)
-                
+
                 if formatted_files:
                     print(f"Formatted {len(formatted_files)} files:")
                     for f in formatted_files:
                         print(f"  - {f}")
                 else:
                     print("No summary files found or failed to format files.")
-                    
+
             except Exception as e:
                 print(f"Error: Summary formatting failed: {e}")
                 sys.exit(1)
@@ -857,12 +856,12 @@ def main():
         # Handle both naming conventions for backward compatibility
         summary_file = args.summary_file or args.summary_file_alt
         feedback = args.feedback or args.feedback_alt
-        
+
         # Ensure summary file exists
         if not os.path.exists(summary_file):
             print(f"Error: Summary file not found: {summary_file}")
             sys.exit(1)
-            
+
         # Validate feedback
         if not feedback or not feedback.strip():
             print("Error: Feedback text is empty.")
@@ -889,14 +888,14 @@ def main():
         try:
             print(f"Updating summary: {summary_file}")
             print(f"Based on feedback: {feedback}")
-            
+
             # Use the direct update method
             updated_summary_path = updater.update_summary_file(
-                summary_file=summary_file, 
-                feedback=feedback, 
+                summary_file=summary_file,
+                feedback=feedback,
                 output_dir=output_dir
             )
-            
+
             print("Summary update complete.")
             print(f"Updated summary saved to: {updated_summary_path}")
 
